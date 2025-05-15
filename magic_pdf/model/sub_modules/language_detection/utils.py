@@ -73,6 +73,8 @@ def model_init(model_name: str):
             langdetect_model_name=MODEL_NAME.YOLO_V11_LangDetect,
             langdetect_model_weight=str(os.path.join(root_dir, 'resources', 'yolov11-langdetect', 'yolo_v11_ft.pt')),
             device=device,
+            enable_ov=True,
+            enable_bf16=True,
         )
     else:
         raise ValueError(f"model_name {model_name} not found")

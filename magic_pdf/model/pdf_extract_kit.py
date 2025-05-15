@@ -20,7 +20,8 @@ from magic_pdf.model.sub_modules.ocr.paddleocr2pytorch.ocr_utils import (
 
 class CustomPEKModel:
 
-    def __init__(self, ocr: bool = False, show_log: bool = False, **kwargs):
+    def __init__(self, enable_ov, enable_bf16_det, enable_bf16_rec, nstreams,
+                 ocr: bool = False, show_log: bool = False, **kwargs):
         """
         ======== model init ========
         """
@@ -97,6 +98,8 @@ class CustomPEKModel:
                         models_dir, self.configs['weights'][self.mfd_model_name]
                     )
                 ),
+                enable_ov=enable_ov,
+                enable_bf16=enable_bf16_det, 
                 device=self.device,
             )
 
@@ -110,6 +113,8 @@ class CustomPEKModel:
                 atom_model_name=AtomicModel.MFR,
                 mfr_weight_dir=mfr_weight_dir,
                 mfr_cfg_path=mfr_cfg_path,
+                enable_ov=enable_ov, 
+                enable_bf16=enable_bf16_rec,
                 device=self.device,
             )
 
@@ -128,6 +133,7 @@ class CustomPEKModel:
                         model_config_dir, 'layoutlmv3', 'layoutlmv3_base_inference.yaml'
                     )
                 ),
+                enable_ov=enable_ov, enable_bf16=enable_bf16_rec,
                 device='cpu' if str(self.device).startswith("mps") else self.device,
             )
         elif self.layout_model_name == MODEL_NAME.DocLayout_YOLO:
@@ -139,11 +145,17 @@ class CustomPEKModel:
                         models_dir, self.configs['weights'][self.layout_model_name]
                     )
                 ),
+                enable_ov=enable_ov, 
+                enable_bf16=enable_bf16_det,
                 device=self.device,
             )
         # 初始化ocr
         self.ocr_model = atom_model_manager.get_atom_model(
             atom_model_name=AtomicModel.OCR,
+            enable_ov=enable_ov, 
+            enable_bf16_det = enable_bf16_det,
+            enable_bf16_rec = enable_bf16_rec,
+            nstreams = nstreams,
             ocr_show_log=show_log,
             det_db_box_thresh=0.3,
             lang=self.lang
@@ -156,6 +168,10 @@ class CustomPEKModel:
                 table_model_name=self.table_model_name,
                 table_model_path=str(os.path.join(models_dir, table_model_dir)),
                 table_max_time=self.table_max_time,
+                enable_ov=enable_ov, 
+                enable_bf16_det = enable_bf16_det,
+                enable_bf16_rec = enable_bf16_rec,
+                nstreams = nstreams,
                 device=self.device,
                 ocr_engine=self.ocr_model,
                 table_sub_model_name=self.table_sub_model_name
@@ -206,11 +222,12 @@ class CustomPEKModel:
 
             # OCR recognition
             new_image = cv2.cvtColor(new_image, cv2.COLOR_RGB2BGR)
-
+            total_infer_count = 0
             if self.apply_ocr:
-                ocr_res = self.ocr_model.ocr(new_image, mfd_res=adjusted_mfdetrec_res)[0]
+                ocr_res, total_infer_count = self.ocr_model.ocr(new_image, mfd_res=adjusted_mfdetrec_res)
             else:
-                ocr_res = self.ocr_model.ocr(new_image, mfd_res=adjusted_mfdetrec_res, rec=False)[0]
+                ocr_res, total_infer_count = self.ocr_model.ocr(new_image, mfd_res=adjusted_mfdetrec_res, rec=False)
+            ocr_res = ocr_res[0]
 
             # Integration results
             if ocr_res:

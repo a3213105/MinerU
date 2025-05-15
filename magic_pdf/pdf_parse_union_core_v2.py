@@ -700,17 +700,14 @@ def parse_page_core(
     img_body_blocks, img_caption_blocks, img_footnote_blocks = process_groups(
         img_groups, 'image_body', 'image_caption_list', 'image_footnote_list'
     )
-
     table_body_blocks, table_caption_blocks, table_footnote_blocks = process_groups(
         table_groups, 'table_body', 'table_caption_list', 'table_footnote_list'
     )
-
     discarded_blocks = magic_model.get_discarded(page_id)
     text_blocks = magic_model.get_text_blocks(page_id)
     title_blocks = magic_model.get_title_blocks(page_id)
     inline_equations, interline_equations, interline_equation_blocks = magic_model.get_equations(page_id)
     page_w, page_h = magic_model.get_page_size(page_id)
-
     def merge_title_blocks(blocks, x_distance_threshold=0.1*page_w):
         def merge_two_bbox(b1, b2):
             x_min = min(b1['bbox'][0], b2['bbox'][0])
@@ -804,22 +801,17 @@ def parse_page_core(
             page_w,
             page_h,
         )
-
     """获取所有的spans信息"""
     spans = magic_model.get_all_spans(page_id)
-
     """在删除重复span之前，应该通过image_body和table_body的block过滤一下image和table的span"""
     """顺便删除大水印并保留abandon的span"""
     spans = remove_outside_spans(spans, all_bboxes, all_discarded_blocks)
-
     """删除重叠spans中置信度较低的那些"""
     spans, dropped_spans_by_confidence = remove_overlaps_low_confidence_spans(spans)
     """删除重叠spans中较小的那些"""
     spans, dropped_spans_by_span_overlap = remove_overlaps_min_spans(spans)
-
     """根据parse_mode，构造spans，主要是文本类的字符填充"""
     if parse_mode == SupportedPdfParseMethod.TXT:
-
         """使用新版本的混合ocr方案."""
         spans = txt_spans_extract_v2(page_doc, spans, all_bboxes, all_discarded_blocks, lang)
 
@@ -827,13 +819,11 @@ def parse_page_core(
         pass
     else:
         raise Exception('parse_mode must be txt or ocr')
-
     """先处理不需要排版的discarded_blocks"""
     discarded_block_with_spans, spans = fill_spans_in_blocks(
         all_discarded_blocks, spans, 0.4
     )
     fix_discarded_blocks = fix_discarded_block(discarded_block_with_spans)
-
     """如果当前页面没有有效的bbox则跳过"""
     if len(all_bboxes) == 0:
         logger.warning(f'skip this page, not found useful bbox, page_id: {page_id}')
@@ -851,21 +841,16 @@ def parse_page_core(
             need_drop,
             drop_reason,
         )
-
     """对image和table截图"""
     spans = ocr_cut_image_and_table(
         spans, page_doc, page_id, pdf_bytes_md5, imageWriter
     )
-
     """span填充进block"""
     block_with_spans, spans = fill_spans_in_blocks(all_bboxes, spans, 0.5)
-
     """对block进行fix操作"""
     fix_blocks = fix_block_spans_v2(block_with_spans)
-
     """同一行被断开的titile合并"""
     merge_title_blocks(fix_blocks)
-
     """获取所有line并计算正文line的高度"""
     line_height = get_line_height(fix_blocks)
 
@@ -939,6 +924,7 @@ def pdf_parse_union(
 
     # """初始化启动时间"""
     # start_time = time.time()
+    # t0 = time.time()
 
     # for page_id, page in enumerate(dataset):
     for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages"):
@@ -984,6 +970,7 @@ def pdf_parse_union(
                     need_ocr_list.append(span)
                     img_crop_list.append(span['np_img'])
                     span.pop('np_img')
+    # t1 = time.time()
     if len(img_crop_list) > 0:
         # Get OCR results for this language's images
         atom_model_manager = AtomModelSingleton()
@@ -994,7 +981,8 @@ def pdf_parse_union(
             lang=lang
         )
         # rec_start = time.time()
-        ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)[0]
+        ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)
+        ocr_res_list = ocr_res_list[0]
         # Verify we have matching counts
         assert len(ocr_res_list) == len(need_ocr_list), f'ocr_res_list: {len(ocr_res_list)}, need_ocr_list: {len(need_ocr_list)}'
         # Process OCR results for this language
@@ -1005,43 +993,48 @@ def pdf_parse_union(
         # rec_time = time.time() - rec_start
         # logger.info(f'ocr-dynamic-rec time: {round(rec_time, 2)}, total images processed: {len(img_crop_list)}')
 
+    # t2 = time.time()
 
     """分段"""
     para_split(pdf_info_dict)
-
     """llm优化"""
+    # image_count = 0
     llm_aided_config = get_llm_aided_config()
     if llm_aided_config is not None:
         """公式优化"""
         formula_aided_config = llm_aided_config.get('formula_aided', None)
         if formula_aided_config is not None:
             if formula_aided_config.get('enable', False):
-                llm_aided_formula_start_time = time.time()
+                # llm_aided_formula_start_time = time.time()
                 llm_aided_formula(pdf_info_dict, formula_aided_config)
-                logger.info(f'llm aided formula time: {round(time.time() - llm_aided_formula_start_time, 2)}')
+                # logger.info(f'llm aided formula time: {round(time.time() - llm_aided_formula_start_time, 2)}')
+                # print(f'### llm aided formula time: {round(time.time() - llm_aided_formula_start_time, 2)}')
         """文本优化"""
         text_aided_config = llm_aided_config.get('text_aided', None)
         if text_aided_config is not None:
             if text_aided_config.get('enable', False):
-                llm_aided_text_start_time = time.time()
+                # llm_aided_text_start_time = time.time()
                 llm_aided_text(pdf_info_dict, text_aided_config)
-                logger.info(f'llm aided text time: {round(time.time() - llm_aided_text_start_time, 2)}')
+                # logger.info(f'llm aided text time: {round(time.time() - llm_aided_text_start_time, 2)}')
+                # print(f'### llm aided text time: {round(time.time() - llm_aided_text_start_time, 2)}')
         """标题优化"""
         title_aided_config = llm_aided_config.get('title_aided', None)
         if title_aided_config is not None:
             if title_aided_config.get('enable', False):
-                llm_aided_title_start_time = time.time()
+                # llm_aided_title_start_time = time.time()
                 llm_aided_title(pdf_info_dict, title_aided_config)
-                logger.info(f'llm aided title time: {round(time.time() - llm_aided_title_start_time, 2)}')
-
+                # logger.info(f'llm aided title time: {round(time.time() - llm_aided_title_start_time, 2)}')
+                # print(f'### llm aided title time: {round(time.time() - llm_aided_title_start_time, 2)}')
     """dict转list"""
     pdf_info_list = dict_to_list(pdf_info_dict)
     new_pdf_info_dict = {
         'pdf_info': pdf_info_list,
     }
-
+    # t3 = time.time()
     clean_memory(get_device())
-
+    # print(f"### processing page time: {(t1 - t0)*1000:.2f} ms, pages : {len(dataset)}")
+    # print(f"### ocr page time: {(t2 - t1)*1000:.2f} ms, images : {len(img_crop_list)}, image_count={image_count}, infer_count={infer_count}")
+    # print(f"### page llm time: {(t3 - t2)*1000:.2f} ms, pdf_info_list: {len(pdf_info_dict)}")
     return new_pdf_info_dict
 
 

@@ -2,7 +2,7 @@ import time
 import cv2
 from loguru import logger
 from tqdm import tqdm
-
+import torch
 from magic_pdf.config.constants import MODEL_NAME
 from magic_pdf.model.sub_modules.model_init import AtomModelSingleton
 from magic_pdf.model.sub_modules.model_utils import (
@@ -16,21 +16,31 @@ MFR_BASE_BATCH_SIZE = 16
 
 
 class BatchAnalyze:
-    def __init__(self, model_manager, batch_ratio: int, show_log, layout_model, formula_enable, table_enable):
+    def __init__(self, model_manager, enable_ov: bool, enable_bf16_det: bool,
+                 enable_bf16_rec: bool, nstreams: int, batch_ratio: int,
+                 show_log, layout_model, formula_enable, table_enable):
         self.model_manager = model_manager
         self.batch_ratio = batch_ratio
         self.show_log = show_log
         self.layout_model = layout_model
         self.formula_enable = formula_enable
         self.table_enable = table_enable
+        self.enable_ov = enable_ov
+        self.enable_bf16_det = enable_bf16_det
+        self.enable_bf16_rec = enable_bf16_rec
+        self.nstreams = nstreams
 
     def __call__(self, images_with_extra_info: list) -> list:
         if len(images_with_extra_info) == 0:
             return []
     
         images_layout_res = []
-        layout_start_time = time.time()
+        # layout_start_time = time.time()
         self.model = self.model_manager.get_model(
+            enable_ov=self.enable_ov,
+            enable_bf16_det=self.enable_bf16_det,
+            enable_bf16_rec=self.enable_bf16_rec,
+            nstreams=self.nstreams,
             ocr=True,
             show_log=self.show_log,
             lang = None,
@@ -51,45 +61,62 @@ class BatchAnalyze:
             layout_images = []
             for image_index, image in enumerate(images):
                 layout_images.append(image)
-
             images_layout_res += self.model.layout_model.batch_predict(
                 # layout_images, self.batch_ratio * YOLO_LAYOUT_BASE_BATCH_SIZE
                 layout_images, YOLO_LAYOUT_BASE_BATCH_SIZE
             )
+        # layout_stop_time = time.time()
+        # res_count = 0
+        # for res_list in images_layout_res:
+        #     res_count += len(res_list)
 
+        # print(f"### layout_model_name={self.model.layout_model_name}, ",
+        #       f"batch_predict time: {(layout_stop_time - layout_start_time)*1000:.2f} ms, "
+        #       f"images_layout_res: {len(images_layout_res)}, {res_count}, images_count={len(images)}")
         # logger.info(
         #     f'layout time: {round(time.time() - layout_start_time, 2)}, image num: {len(images)}'
         # )
 
         if self.model.apply_formula:
             # 公式检测
-            mfd_start_time = time.time()
+            # mfd_start_time = time.time()
             images_mfd_res = self.model.mfd_model.batch_predict(
                 # images, self.batch_ratio * MFD_BASE_BATCH_SIZE
                 images, MFD_BASE_BATCH_SIZE
             )
+            # mfd_stop_time = time.time()
             # logger.info(
             #     f'mfd time: {round(time.time() - mfd_start_time, 2)}, image num: {len(images)}'
             # )
 
+            # res_count = 0
+            # for res in images_layout_res:
+            #     res_count += len(res_list)
+            # print(f"### mfd_model, batch_predict time: {(mfd_stop_time - mfd_start_time)*1000:.2f} ms, "
+            #       f"images_mfd_res: {len(images_mfd_res)}, {res_count}, image num: {len(images)}")
+
             # 公式识别
-            mfr_start_time = time.time()
+            # mfr_start_time = time.time()
             images_formula_list = self.model.mfr_model.batch_predict(
                 images_mfd_res,
                 images,
                 batch_size=self.batch_ratio * MFR_BASE_BATCH_SIZE,
             )
-            mfr_count = 0
+            # mfr_stop_time = time.time()
+
+            # mfr_count = 0
             for image_index in range(len(images)):
                 images_layout_res[image_index] += images_formula_list[image_index]
-                mfr_count += len(images_formula_list[image_index])
+                # mfr_count += len(images_formula_list[image_index])
+            # print(f"### mfr_model, batch_predict time: {(mfr_stop_time - mfr_start_time)*1000:.2f} ms, ",
+            #       f"image num: {len(images)}, mfr_count={mfr_count}, ",
+            #       f"batch_ratio={self.batch_ratio}")
             # logger.info(
             #     f'mfr time: {round(time.time() - mfr_start_time, 2)}, image num: {mfr_count}'
             # )
 
         # 清理显存
         # clean_vram(self.model.device, vram_threshold=8)
-
         ocr_res_list_all_page = []
         table_res_list_all_page = []
         for index in range(len(images)):
@@ -117,15 +144,25 @@ class BatchAnalyze:
                                               })
 
         # 文本框检测
-        det_start = time.time()
-        det_count = 0
+        # det_start = time.time()
+        # det_count = 0
+        # total_infer_count = 0
         # for ocr_res_list_dict in ocr_res_list_all_page:
-        for ocr_res_list_dict in tqdm(ocr_res_list_all_page, desc="OCR-det Predict"):
+        if self.enable_ov:
+            desc = "OCR-det_ov Predict"
+        elif self.enable_bf16_det:
+            desc = "OCR-det_bf16 Predict"
+        else:
+            desc="OCR-det Predict"
+        for ocr_res_list_dict in tqdm(ocr_res_list_all_page, desc=desc):
             # Process each area that requires OCR processing
             _lang = ocr_res_list_dict['lang']
             # Get OCR results for this language's images
             atom_model_manager = AtomModelSingleton()
             ocr_model = atom_model_manager.get_atom_model(
+                enable_ov = self.enable_ov,
+                enable_bf16_det = self.enable_bf16_det,
+                enable_bf16_rec = self.enable_bf16_rec,
                 atom_model_name='ocr',
                 ocr_show_log=False,
                 det_db_box_thresh=0.3,
@@ -152,16 +189,28 @@ class BatchAnalyze:
 
             # det_count += len(ocr_res_list_dict['ocr_res_list'])
         # logger.info(f'ocr-det time: {round(time.time()-det_start, 2)}, image num: {det_count}')
+        # det_stop = time.time()
 
-
+        # print(f"### OCR-det, batch_predict time: {(det_stop - det_start)*1000:.2f} ms, ",
+        #       f"ocr_res_list_all_page={len(ocr_res_list_all_page)}, ",
+        #       f"det_count={det_count}, total_infer_count={total_infer_count}")
         # 表格识别 table recognition
         if self.model.apply_table:
-            table_start = time.time()
+            # table_start = time.time()
             # for table_res_list_dict in table_res_list_all_page:
-            for table_res_dict in tqdm(table_res_list_all_page, desc="Table Predict"):
+            if self.enable_ov:
+                desc = "Table_ov Predict"
+            elif self.enable_bf16_det:
+                desc = "Table_bf16 Predict"
+            else:
+                desc="Table Predict"
+            for table_res_dict in tqdm(table_res_list_all_page, desc=desc):
                 _lang = table_res_dict['lang']
                 atom_model_manager = AtomModelSingleton()
                 ocr_engine = atom_model_manager.get_atom_model(
+                    enable_ov = self.enable_ov,
+                    enable_bf16_det = self.enable_bf16_det,
+                    enable_bf16_rec = self.enable_bf16_rec,
                     atom_model_name='ocr',
                     ocr_show_log=False,
                     det_db_box_thresh=0.5,
@@ -169,6 +218,9 @@ class BatchAnalyze:
                     lang=_lang
                 )
                 table_model = atom_model_manager.get_atom_model(
+                    enable_ov = self.enable_ov,
+                    enable_bf16_det = self.enable_bf16_det,
+                    enable_bf16_rec = self.enable_bf16_rec,
                     atom_model_name='table',
                     table_model_name='rapid_table',
                     table_model_path='',
@@ -194,7 +246,10 @@ class BatchAnalyze:
                         'table recognition processing fails, not get html return'
                     )
             # logger.info(f'table time: {round(time.time() - table_start, 2)}, image num: {len(table_res_list_all_page)}')
-
+            # table_stop = time.time()
+            # print(f"### rapid_table, batch_predict time: {(table_stop - table_start)*1000:.2f} ms, ",
+            #       f"ocr_res_list_all_page={len(table_res_list_all_page)}, infer_count={infer_count}")
+                  
         # Create dictionaries to store items by language
         need_ocr_lists_by_lang = {}  # Dict of lists for each language
         img_crop_lists_by_lang = {}  # Dict of lists for each language
@@ -218,27 +273,27 @@ class BatchAnalyze:
                         layout_res_item.pop('np_img')
                         layout_res_item.pop('lang')
 
-
         if len(img_crop_lists_by_lang) > 0:
-
             # Process OCR by language
-            rec_time = 0
-            rec_start = time.time()
-            total_processed = 0
-
+            # rec_start = time.time()
+            # total_processed = 0
+            # total_infer_count = 0
+            # total_res_count = 0
             # Process each language separately
             for lang, img_crop_list in img_crop_lists_by_lang.items():
                 if len(img_crop_list) > 0:
                     # Get OCR results for this language's images
                     atom_model_manager = AtomModelSingleton()
                     ocr_model = atom_model_manager.get_atom_model(
+                        enable_ov = self.enable_ov,
+                        enable_bf16_det = self.enable_bf16_det,
+                        enable_bf16_rec = self.enable_bf16_rec,
                         atom_model_name='ocr',
                         ocr_show_log=False,
                         det_db_box_thresh=0.3,
                         lang=lang
                     )
                     ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)[0]
-
                     # Verify we have matching counts
                     assert len(ocr_res_list) == len(
                         need_ocr_lists_by_lang[lang]), f'ocr_res_list: {len(ocr_res_list)}, need_ocr_list: {len(need_ocr_lists_by_lang[lang])} for lang: {lang}'
@@ -249,11 +304,14 @@ class BatchAnalyze:
                         layout_res_item['text'] = ocr_text
                         layout_res_item['score'] = float(f"{ocr_score:.3f}")
 
-                    total_processed += len(img_crop_list)
+                    # total_processed += len(img_crop_list)
+                    # total_infer_count += infer_count
+                    # total_res_count += len(ocr_res_list)
 
-            rec_time += time.time() - rec_start
+            # rec_stop = time.time()
+            # print(f"### OCR-rec, batch_predict time: {(rec_stop - rec_start)*1000:.2f} ms, ",
+            #       f"total_processed={total_processed}, total_infer_count={total_infer_count},",
+            #       f"total_res_count={total_res_count}")
+
             # logger.info(f'ocr-rec time: {round(rec_time, 2)}, total images processed: {total_processed}')
-
-
-
         return images_layout_res

@@ -34,6 +34,10 @@ class ModelSingleton:
 
     def get_model(
         self,
+        enable_ov: bool, 
+        enable_bf16_det: bool,
+        enable_bf16_rec: bool,
+        nstreams: int,
         ocr: bool,
         show_log: bool,
         lang=None,
@@ -44,6 +48,10 @@ class ModelSingleton:
         key = (ocr, show_log, lang, layout_model, formula_enable, table_enable)
         if key not in self._models:
             self._models[key] = custom_model_init(
+                enable_ov=enable_ov,
+                enable_bf16_det=enable_bf16_det,
+                enable_bf16_rec=enable_bf16_rec,
+                nstreams=nstreams,
                 ocr=ocr,
                 show_log=show_log,
                 lang=lang,
@@ -55,6 +63,10 @@ class ModelSingleton:
 
 
 def custom_model_init(
+    enable_ov: bool, 
+    enable_bf16_det: bool,
+    enable_bf16_rec: bool,
+    nstreams: int,
     ocr: bool = False,
     show_log: bool = False,
     lang=None,
@@ -98,6 +110,10 @@ def custom_model_init(
                 table_config['enable'] = table_enable
 
             model_input = {
+                'enable_ov': enable_ov,
+                'enable_bf16_det': enable_bf16_det,
+                'enable_bf16_rec': enable_bf16_rec,
+                'nstreams': nstreams,
                 'ocr': ocr,
                 'show_log': show_log,
                 'models_dir': local_models_dir,
@@ -122,6 +138,10 @@ def custom_model_init(
 
 def doc_analyze(
     dataset: Dataset,
+    enable_ov: bool, 
+    enable_bf16_det: bool, 
+    enable_bf16_rec: bool, 
+    nstreams: int,
     ocr: bool = False,
     show_log: bool = False,
     start_page_id=0,
@@ -157,7 +177,9 @@ def doc_analyze(
 
     results = []
     for batch_image in batch_images:
-        result = may_batch_image_analyze(batch_image, ocr, show_log,layout_model, formula_enable, table_enable)
+        result = may_batch_image_analyze(batch_image, enable_ov, enable_bf16_det, 
+                                         enable_bf16_rec, nstreams, ocr, show_log,
+                                         layout_model, formula_enable, table_enable)
         results.extend(result)
 
     model_json = []
@@ -218,7 +240,7 @@ def batch_doc_analyze(
     for index, batch_image in enumerate(batch_images):
         processed_images_count += len(batch_image)
         logger.info(f'Batch {index + 1}/{len(batch_images)}: {processed_images_count} pages/{len(images_with_extra_info)} pages')
-        result = may_batch_image_analyze(batch_image, True, show_log, layout_model, formula_enable, table_enable)
+        result = may_batch_image_analyze(batch_image, enable_ov, enable_bf16, True, show_log, layout_model, formula_enable, table_enable)
         results.extend(result)
 
     infer_results = []
@@ -238,6 +260,10 @@ def batch_doc_analyze(
 
 def may_batch_image_analyze(
         images_with_extra_info: list[(np.ndarray, bool, str)],
+        enable_ov: bool, 
+        enable_bf16_det: bool, 
+        enable_bf16_rec: bool, 
+        nstreams: int, 
         ocr: bool,
         show_log: bool = False,
         layout_model=None,
@@ -281,7 +307,8 @@ def may_batch_image_analyze(
 
     # doc_analyze_start = time.time()
 
-    batch_model = BatchAnalyze(model_manager, batch_ratio, show_log, layout_model, formula_enable, table_enable)
+    batch_model = BatchAnalyze(model_manager, enable_ov, enable_bf16_det, enable_bf16_rec, nstreams,
+                               batch_ratio, show_log, layout_model, formula_enable, table_enable)
     results = batch_model(images_with_extra_info)
 
     # gc_start = time.time()

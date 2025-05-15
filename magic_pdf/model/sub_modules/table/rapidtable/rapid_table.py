@@ -8,10 +8,15 @@ from rapid_table import RapidTable, RapidTableInput
 from rapid_table.main import ModelType
 
 from magic_pdf.libs.config_reader import get_device
+try :
+    from ...ov_operator_async import RapidTableProcesser
+except ImportError as e:
+    print(f"### import ov_operator_async failed, {e}")
 
 
 class RapidTableModel(object):
-    def __init__(self, ocr_engine, table_sub_model_name='slanet_plus'):
+    def __init__(self, ocr_engine, table_sub_model_name='slanet_plus', 
+                 enable_ov = True, enable_bf16 = True):
         sub_model_list = [model.value for model in ModelType]
         if table_sub_model_name is None:
             input_args = RapidTableInput()
@@ -26,16 +31,13 @@ class RapidTableModel(object):
             raise ValueError(f"Invalid table_sub_model_name: {table_sub_model_name}. It must be one of {sub_model_list}")
 
         self.table_model = RapidTable(input_args)
-
-        # self.ocr_model_name = "RapidOCR"
-        # if torch.cuda.is_available():
-        #     from rapidocr_paddle import RapidOCR
-        #     self.ocr_engine = RapidOCR(det_use_cuda=True, cls_use_cuda=True, rec_use_cuda=True)
-        # else:
-        #     from rapidocr_onnxruntime import RapidOCR
-        #     self.ocr_engine = RapidOCR()
-
-        # self.ocr_model_name = "PaddleOCR"
+        self.enable_ov = enable_ov
+        self.enable_bf16 = enable_bf16
+        if self.enable_ov:
+            self.table_model_ov = RapidTableProcesser(input_args.model_path)
+            self.table_model_ov.setup_model(stream_num = 1, bf16=self.enable_bf16,)
+            self.table_model.table_structure.session = self.table_model_ov
+            print(f"### load table_model_ov model {input_args.model_path}, bf16={self.enable_bf16}")
         self.ocr_engine = ocr_engine
 
 
@@ -46,10 +48,10 @@ class RapidTableModel(object):
         img_height, img_width = bgr_image.shape[:2]
         img_aspect_ratio = img_height / img_width if img_width > 0 else 1.0
         img_is_portrait = img_aspect_ratio > 1.2
-
         if img_is_portrait:
 
-            det_res = self.ocr_engine.ocr(bgr_image, rec=False)[0]
+            det_res = self.ocr_engine.ocr(bgr_image, rec=False)
+            det_res = det_res[0]
             # Check if table is rotated by analyzing text box aspect ratios
             is_rotated = False
             if det_res:
@@ -90,7 +92,6 @@ class RapidTableModel(object):
                       len(item) == 2 and isinstance(item[1], tuple)]
         else:
             ocr_result = None
-
 
         if ocr_result:
             table_results = self.table_model(np.asarray(image), ocr_result)

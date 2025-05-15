@@ -8,6 +8,12 @@ from ...pytorchocr.base_ocr_v20 import BaseOCRV20
 from . import pytorchocr_utility as utility
 from ...pytorchocr.postprocess import build_post_process
 
+using_ov = True
+try :
+    from .....ov_operator_async import PaddleTextClsProcessor
+except ImportError as e:
+    using_ov = False
+    print(f"### import ov_operator_async failed, {e}")
 
 class TextClassifier(BaseOCRV20):
     def __init__(self, args, **kwargs):
@@ -31,9 +37,40 @@ class TextClassifier(BaseOCRV20):
         self.limited_max_width = args.limited_max_width
         self.limited_min_width = args.limited_min_width
 
-        self.load_pytorch_weights(self.weights_path)
-        self.net.eval()
-        self.net.to(self.device)
+        try :
+            self.enable_ov = args.enable_ov and using_ov
+        except AttributeError:
+            self.enable_ov = True
+            
+        try :
+            self.enable_bf16 = False #args.enable_bf16_rec
+        except AttributeError:
+            self.enable_bf16 = False
+        self.ov_file_name = f"{self.weights_path}.xml"
+        self.ov_cls = None
+        if self.enable_ov:
+            if not os.path.isfile(self.ov_file_name):
+                self.load_pytorch_weights(self.weights_path)
+                self.net.eval()
+                self.net.to(self.device)
+                import openvino as ov
+                try :
+                    ov_model = ov.convert_model(self.net, example_input=torch.randn(1, 3, 960, 960))
+                    ov.save_model(ov_model, self.ov_file_name)
+                    print(f"export ov model to {self.ov_file_name} ")
+                except Exception as e:
+                    print(f"### convert_model failed: {e}, try simple convert_model")
+            if os.path.isfile(self.ov_file_name):
+                self.ov_cls = PaddleTextDetector(self.ov_file_name)
+                self.ov_cls.setup_model(stream_num = 1, bf16=self.enable_bf16,) 
+                                        # shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
+                print(f"### load OCR-Cls_ov model {self.ov_file_name}, enable_bf16={self.enable_bf16}, ",
+                    f"det_algorithm={self.det_algorithm}")
+        else :
+            self.load_pytorch_weights(self.weights_path)
+            self.net.eval()
+            self.net.to(self.device)
+        # print(f"### TextClassifier init enable_ov={self.enable_ov}, enable_bf16={self.enable_bf16}")
 
     def resize_norm_img(self, img):
         imgC, imgH, imgW = self.cls_image_shape
@@ -89,11 +126,24 @@ class TextClassifier(BaseOCRV20):
             norm_img_batch = norm_img_batch.copy()
             starttime = time.time()
 
-            with torch.no_grad():
-                inp = torch.from_numpy(norm_img_batch)
-                inp = inp.to(self.device)
-                prob_out = self.net(inp)
-            prob_out = prob_out.cpu().numpy()
+            inp = torch.from_numpy(norm_img_batch)
+            inp = inp.to(self.device)
+            if self.ov_cls is None:
+                if self.enable_bf16:
+                    with torch.no_grad(), torch.amp.autocast('cpu'):
+                        prob_out = self.net(inp)
+                else:
+                    with torch.no_grad():
+                        prob_out = self.net(inp)
+                if self.enable_ov and not os.path.isfile(self.ov_file_name):
+                    import openvino as ov
+                    ov_model = ov.convert_model(self.net, example_input=inp)
+                    ov.save_model(ov_model, self.ov_file_name)
+                    print(f"export ov model to {self.ov_file_name} with example_input={inp.shape}")
+            else:
+                prob_out = self.ov_cls(inp)
+
+            prob_out = prob_out.cpu().float().numpy()
 
             cls_result = self.postprocess_op(prob_out)
             elapse += time.time() - starttime

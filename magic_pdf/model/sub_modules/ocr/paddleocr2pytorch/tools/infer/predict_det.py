@@ -1,5 +1,5 @@
 import sys
-
+import os
 import numpy as np
 import time
 import torch
@@ -7,6 +7,12 @@ from ...pytorchocr.base_ocr_v20 import BaseOCRV20
 from . import pytorchocr_utility as utility
 from ...pytorchocr.data import create_operators, transform
 from ...pytorchocr.postprocess import build_post_process
+using_ov = True
+try :
+    from .....ov_operator_async import PaddleTextDetector
+except ImportError as e:
+    using_ov = False
+    print(f"### import ov_operator_async failed, {e}")
 
 
 class TextDetector(BaseOCRV20):
@@ -113,9 +119,39 @@ class TextDetector(BaseOCRV20):
         self.yaml_path = args.det_yaml_path
         network_config = utility.get_arch_config(self.weights_path)
         super(TextDetector, self).__init__(network_config, **kwargs)
-        self.load_pytorch_weights(self.weights_path)
-        self.net.eval()
-        self.net.to(self.device)
+        try :
+            self.enable_ov = args.enable_ov and using_ov
+        except AttributeError:
+            self.enable_ov = True
+            
+        try :
+            self.enable_bf16 = False #args.enable_bf16_rec
+        except AttributeError:
+            self.enable_bf16 = False
+        self.ov_file_name = f"{self.weights_path}.xml"
+        self.ov_det = None
+        if self.enable_ov :
+            if not os.path.isfile(self.ov_file_name):
+                self.load_pytorch_weights(self.weights_path)
+                self.net.eval()
+                self.net.to(self.device)
+                import openvino as ov
+                try :
+                    ov_model = ov.convert_model(self.net, example_input=torch.randn(1, 3, 960, 960))
+                    ov.save_model(ov_model, self.ov_file_name)
+                    print(f"export ov model to {self.ov_file_name} ")
+                except Exception as e:
+                    print(f"### convert_model failed: {e}, try simple convert_model")
+            if os.path.isfile(self.ov_file_name):
+                self.ov_det = PaddleTextDetector(self.ov_file_name)
+                self.ov_det.setup_model(stream_num = 1, bf16=self.enable_bf16,) 
+                                        # shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
+                print(f"### load OCR-Det_ov model {self.ov_file_name}, enable_bf16={self.enable_bf16}, ",
+                    f"det_algorithm={self.det_algorithm}")
+        else:
+            self.load_pytorch_weights(self.weights_path)
+            self.net.eval()
+            self.net.to(self.device)
 
     def order_points_clockwise(self, pts):
         """
@@ -171,6 +207,7 @@ class TextDetector(BaseOCRV20):
         return dt_boxes
 
     def __call__(self, img):
+        starttime = time.time()
         ori_im = img.copy()
         data = {'image': img}
         data = transform(data, self.preprocess_op)
@@ -180,30 +217,44 @@ class TextDetector(BaseOCRV20):
         img = np.expand_dims(img, axis=0)
         shape_list = np.expand_dims(shape_list, axis=0)
         img = img.copy()
-        starttime = time.time()
-
-        with torch.no_grad():
-            inp = torch.from_numpy(img)
-            inp = inp.to(self.device)
-            outputs = self.net(inp)
+        if self.ov_det :
+            result = self.ov_det([img])
+            result = torch.from_numpy(result)
+            outputs = {}
+            outputs['maps'] = result
+        else:
+            if self.enable_bf16:
+                with torch.no_grad() , torch.amp.autocast('cpu'):
+                    inp = torch.from_numpy(img)
+                    inp = inp.to(self.device)
+                    outputs = self.net(inp)
+            else :
+                with torch.no_grad():
+                    inp = torch.from_numpy(img)
+                    inp = inp.to(self.device)
+                    outputs = self.net(inp)
+            if self.enable_ov and not os.path.isfile(self.ov_file_name):
+                import openvino as ov
+                ov_model = ov.convert_model(self.net, example_input=inp)
+                ov.save_model(ov_model, self.ov_file_name)
+                print(f"export ov model to {self.ov_file_name} with example_input={inp.shape}")
 
         preds = {}
         if self.det_algorithm == "EAST":
-            preds['f_geo'] = outputs['f_geo'].cpu().numpy()
-            preds['f_score'] = outputs['f_score'].cpu().numpy()
+            preds['f_geo'] = outputs['f_geo'].cpu().float().numpy()
+            preds['f_score'] = outputs['f_score'].cpu().float().numpy()
         elif self.det_algorithm == 'SAST':
-            preds['f_border'] = outputs['f_border'].cpu().numpy()
-            preds['f_score'] = outputs['f_score'].cpu().numpy()
-            preds['f_tco'] = outputs['f_tco'].cpu().numpy()
-            preds['f_tvo'] = outputs['f_tvo'].cpu().numpy()
+            preds['f_border'] = outputs['f_border'].cpu().float().numpy()
+            preds['f_score'] = outputs['f_score'].cpu().float().numpy()
+            preds['f_tco'] = outputs['f_tco'].cpu().float().numpy()
+            preds['f_tvo'] = outputs['f_tvo'].cpu().float().numpy()
         elif self.det_algorithm in ['DB', 'PSE', 'DB++']:
-            preds['maps'] = outputs['maps'].cpu().numpy()
+            preds['maps'] = outputs['maps'].cpu().float().numpy()
         elif self.det_algorithm == 'FCE':
             for i, (k, output) in enumerate(outputs.items()):
                 preds['level_{}'.format(i)] = output
         else:
             raise NotImplementedError
-
         post_result = self.postprocess_op(preds, shape_list)
         dt_boxes = post_result[0]['points']
         if (self.det_algorithm == "SAST" and
