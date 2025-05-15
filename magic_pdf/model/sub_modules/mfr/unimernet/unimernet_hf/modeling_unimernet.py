@@ -162,7 +162,7 @@ class UnimernetModel(VisionEncoderDecoderModel):
         ).loss
         return {"loss": loss}
 
-    def generate(self, samples, do_sample: bool = False, temperature: float = 0.2, top_p: float = 0.95):
+    def generate_bak(self, samples, do_sample: bool = False, temperature: float = 0.2, top_p: float = 0.95):
         pixel_values = samples["image"]
         num_channels = pixel_values.shape[1]
         if num_channels == 1:
@@ -187,3 +187,19 @@ class UnimernetModel(VisionEncoderDecoderModel):
         fixed_str = [latex_rm_whitespace(s) for s in pred_str]
         return {"pred_ids": outputs, "pred_tokens": pred_tokens, "pred_str": pred_str, "fixed_str": fixed_str}
 
+    def parser_result(self, outputs) :
+        pred_str = self.tokenizer.token2str(outputs)
+        fixed_str = [latex_rm_whitespace(s) for s in pred_str]
+        return fixed_str
+
+    def generate(self, pixel_values):
+        pixel_values = pixel_values.repeat(1, 3, 1, 1)
+        outputs = super().generate(
+            pixel_values=pixel_values,
+            # max_new_tokens=self.tokenizer.tokenizer.model_max_length, # required
+            # decoder_start_token_id=self.tokenizer.tokenizer.bos_token_id,
+            # do_sample=False,
+        )
+
+        outputs = outputs[:, 1:]
+        return outputs

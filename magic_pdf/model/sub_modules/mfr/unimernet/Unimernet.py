@@ -1,7 +1,9 @@
 import torch
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-
+import time
+import os
+import warnings
 
 class MathDataset(Dataset):
     def __init__(self, image_paths, transform=None):
@@ -19,17 +21,27 @@ class MathDataset(Dataset):
 
 
 class UnimernetModel(object):
-    def __init__(self, weight_dir, cfg_path, _device_="cpu"):
-        from .unimernet_hf import UnimernetModel
-        if _device_.startswith("mps"):
-            self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+    def __init__(self, weight_dir, cfg_path, enable_ov, enable_bf16, _device_="cpu"):
+        self.enable_ov = enable_ov
+        self.enable_bf16 = enable_bf16
+        self.ov_file_name = f"{weight_dir}.xml"
+        if self.enable_ov and os.path.isfile(self.ov_file_name):
+            self.ov_unimernet = UnimernetModel(self.ov_file_name)
+            self.ov_unimernet.setup_model(stream_num = 4, bf16=True)
         else:
-            self.model = UnimernetModel.from_pretrained(weight_dir)
-        self.device = _device_
-        self.model.to(_device_)
-        if not _device_.startswith("cpu"):
-            self.model = self.model.to(dtype=torch.float16)
-        self.model.eval()
+            from .unimernet_hf import UnimernetModel
+            self.ov_unimernet = None
+            # print(f"### import UnimernetModel from {weight_dir}, self.enable_bf16={self.enable_bf16}")
+            if _device_.startswith("mps"):
+                self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+            else:
+                self.model = UnimernetModel.from_pretrained(weight_dir)
+            self.device = _device_
+            self.model.to(_device_)
+            if not _device_.startswith("cpu"):
+                self.model = self.model.to(dtype=torch.float16)
+            self.model.eval()
+
 
     def predict(self, mfd_res, image):
         formula_list = []
@@ -68,6 +80,8 @@ class UnimernetModel(object):
         image_info = []  # Store (area, original_index, image) tuples
 
         # Collect images with their original indices
+        # print(f"### images_mfd_res={len(images_mfd_res)}")
+        t0 = time.time()
         for image_index in range(len(images_mfd_res)):
             mfd_res = images_mfd_res[image_index]
             np_array_image = images[image_index]
@@ -93,7 +107,7 @@ class UnimernetModel(object):
 
             images_formula_list.append(formula_list)
             backfill_list += formula_list
-
+        t1 = time.time()
         # Stable sort by area
         image_info.sort(key=lambda x: x[0])  # sort by area
         sorted_indices = [x[1] for x in image_info]
@@ -109,27 +123,80 @@ class UnimernetModel(object):
         # Process batches and store results
         mfr_res = []
         # for mf_img in dataloader:
+        t2 = time.time()
+        if self.ov_unimernet is not None:
+            self.ov_unimernet(sorted_images)
+            mfr_res.extend(output["fixed_str"])
+        elif self.enable_bf16 :
+            with tqdm(total=len(sorted_images), desc="MFR_BF16 Predict") as pbar:
+                for index, mf_img in enumerate(dataloader):
+                    mf_img = mf_img.to(dtype=self.model.dtype)
+                    mf_img = mf_img.to(self.device)
+                    with torch.no_grad(), torch.amp.autocast('cpu'):
+                        # output = self.model.generate({"image": mf_img})
+                        outputs = self.model.generate(mf_img)
+                        outputs = outputs.cpu().numpy()
+                        output = self.model.parser_result(outputs)
 
-        with tqdm(total=len(sorted_images), desc="MFR Predict") as pbar:
-            for index, mf_img in enumerate(dataloader):
-                mf_img = mf_img.to(dtype=self.model.dtype)
-                mf_img = mf_img.to(self.device)
-                with torch.no_grad():
-                    output = self.model.generate({"image": mf_img})
-                mfr_res.extend(output["fixed_str"])
+                    # mfr_res.extend(output["fixed_str"])
+                    mfr_res.extend(output)
 
-                # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
-                current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
-                pbar.update(current_batch_size)
+                    # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
+                    current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
+                    pbar.update(current_batch_size)
+        else :
+            with tqdm(total=len(sorted_images), desc="MFR Predict") as pbar:
+                for index, mf_img in enumerate(dataloader):
+                    mf_img = mf_img.to(dtype=self.model.dtype)
+                    mf_img = mf_img.to(self.device)
+                    class model_wrapper(torch.nn.Module) :
+                        def __init__(self, ipm):
+                            super(model_wrapper, self).__init__()
+                            self.mm = ipm
+                        def forward(self, mf_img):
+                            return self.mm.generate(mf_img)
+                    mm = model_wrapper(self.model)
+                    mm = mm.eval()
+                    with torch.no_grad():
+                        # output = self.model.generate({"image": mf_img})
+                        outputs = mm(mf_img)
+                        outputs = outputs.cpu().numpy()
+                        output = self.model.parser_result(outputs)
+                        # print(f"### UnimernetModel batch_predict: mf_img={mf_img.shape}, output={output}")
+                        # with warnings.catch_warnings():
+                        #     # warnings.filterwarnings("ignore")
+                        #     if not os.path.isfile(self.ov_file_name):
+                        #         print(f"save {self.ov_file_name}, mf_img={mf_img.shape}")
+                        #         # try:
+                        #         onnx_program = torch.onnx.export(mm, mf_img, dynamo=False, report=True, strict=False)
+                        #             # print(f"### UnimernetModel batch_predict: onnx_program={onnx_program}")
+                        #             # onnx_path = "/tmp/test.onnx"
+                        #             # torch.onnx.export(mm, mf_img, onnx_path,)
+                        #             # print(f"ONNX model exported to {onnx_path}.")
+                        #         #     import openvino as ov
+                        #         #     ov_model = ov.convert_model(mm, example_input=mf_img)
+                        #         #     ov.save_model(ov_model, self.ov_file_name)
+                        #         # except Exception as e:
+                        #         #     print(f"### UnimernetModel convert_model failed: {e}, try simple convert_model")
+                        #         #     exit(-1)
 
+                    # mfr_res.extend(output["fixed_str"])
+                    mfr_res.extend(output)
+
+                    # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
+                    current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
+                    pbar.update(current_batch_size)
+        t3 = time.time()
         # Restore original order
         unsorted_results = [""] * len(mfr_res)
         for new_idx, latex in enumerate(mfr_res):
             original_idx = index_mapping[new_idx]
             unsorted_results[original_idx] = latex
-
         # Fill results back
         for res, latex in zip(backfill_list, unsorted_results):
             res["latex"] = latex
-
+        t4 = time.time()
+        # print(f"### UnimernetModel batch_predict: images_mfd_res={len(images_mfd_res)}, images={len(images)}, ",
+        #       f"batch_size={batch_size}, sorted_images={len(sorted_images)}, ",
+        #       f"{t1-t0:.6f} {t2-t1:.6f} {t3-t2:.6f} {t4-t3:.6f} ",)
         return images_formula_list
