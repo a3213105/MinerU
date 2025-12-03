@@ -56,6 +56,7 @@ class BatchAnalyze:
             for image in images:
                 layout_res = self.model.layout_model(image, ignore_catids=[])
                 images_layout_res.append(layout_res)
+            print(f"### layoutlmv3 images_layout_res={len(images_layout_res)}, images={len(images)}")
         elif self.model.layout_model_name == MODEL_NAME.DocLayout_YOLO:
             # doclayout_yolo
             layout_images = []
@@ -65,35 +66,18 @@ class BatchAnalyze:
                 # layout_images, self.batch_ratio * YOLO_LAYOUT_BASE_BATCH_SIZE
                 layout_images, YOLO_LAYOUT_BASE_BATCH_SIZE
             )
-        # layout_stop_time = time.time()
-        # res_count = 0
-        # for res_list in images_layout_res:
-        #     res_count += len(res_list)
 
-        # print(f"### layout_model_name={self.model.layout_model_name}, ",
-        #       f"batch_predict time: {(layout_stop_time - layout_start_time)*1000:.2f} ms, "
-        #       f"images_layout_res: {len(images_layout_res)}, {res_count}, images_count={len(images)}")
-        # logger.info(
-        #     f'layout time: {round(time.time() - layout_start_time, 2)}, image num: {len(images)}'
-        # )
 
         if self.model.apply_formula:
             # 公式检测
             # mfd_start_time = time.time()
             images_mfd_res = self.model.mfd_model.batch_predict(
-                # images, self.batch_ratio * MFD_BASE_BATCH_SIZE
                 images, MFD_BASE_BATCH_SIZE
             )
             # mfd_stop_time = time.time()
             # logger.info(
             #     f'mfd time: {round(time.time() - mfd_start_time, 2)}, image num: {len(images)}'
             # )
-
-            # res_count = 0
-            # for res in images_layout_res:
-            #     res_count += len(res_list)
-            # print(f"### mfd_model, batch_predict time: {(mfd_stop_time - mfd_start_time)*1000:.2f} ms, "
-            #       f"images_mfd_res: {len(images_mfd_res)}, {res_count}, image num: {len(images)}")
 
             # 公式识别
             # mfr_start_time = time.time()
@@ -149,11 +133,14 @@ class BatchAnalyze:
         # total_infer_count = 0
         # for ocr_res_list_dict in ocr_res_list_all_page:
         if self.enable_ov:
-            desc = "OCR-det_ov Predict"
+            if self.enable_bf16_det:
+                desc = "OCR-Det_OV_BF16 Predict"
+            else:
+                desc = "OCR-Det_OV Predict"
         elif self.enable_bf16_det:
-            desc = "OCR-det_bf16 Predict"
+            desc = "OCR-Det_BF16 Predict"
         else:
-            desc="OCR-det Predict"
+            desc="OCR-Det Predict"
         for ocr_res_list_dict in tqdm(ocr_res_list_all_page, desc=desc):
             # Process each area that requires OCR processing
             _lang = ocr_res_list_dict['lang']
@@ -199,9 +186,12 @@ class BatchAnalyze:
             # table_start = time.time()
             # for table_res_list_dict in table_res_list_all_page:
             if self.enable_ov:
-                desc = "Table_ov Predict"
+                if self.enable_bf16_det:
+                    desc = "Table_OV_BF16 Predict"
+                else:
+                    desc = "Table_OV Predict"
             elif self.enable_bf16_det:
-                desc = "Table_bf16 Predict"
+                desc = "Table_BF16 Predict"
             else:
                 desc="Table Predict"
             for table_res_dict in tqdm(table_res_list_all_page, desc=desc):

@@ -44,7 +44,11 @@ class YOLOv8MFDModel(object):
     def batch_predict(self, images: list, batch_size: int) -> list:
         images_mfd_res = []
         if self.ov_yolo is not None :
-            for index in tqdm(range(0, len(images), batch_size), desc="MFD_OV Predict"):
+            if self.enable_bf16 :
+                desc = "MFD_OV_bf16 Predict"
+            else :
+                desc = "MFD_OV Predict"
+            for index in tqdm(range(0, len(images), batch_size), desc=desc):
                 mfd_res = [
                     image_res.cpu()
                     for image_res in self.mfd_model.predict(
@@ -58,21 +62,6 @@ class YOLOv8MFDModel(object):
                 ]
                 for image_res in mfd_res:
                     images_mfd_res.append(image_res)
-                    # print(f"### image_res.boxes={image_res.boxes.shape[0]}")
-        # elif self.enable_bf16 :
-        #     for index in tqdm(range(0, len(images), batch_size), desc="MFD_BF16 Predict"):
-        #         with torch.no_grad(), torch.amp.autocast('cpu'):
-        #             image_res = self.mfd_model.predict(
-        #                 images[index : index + batch_size],
-        #                 imgsz=1888,
-        #                 conf=0.25,
-        #                 iou=0.45,
-        #                 verbose=False,
-        #                 device=self.device,
-        #             )
-        #             for image_res in image_res:
-        #                 images_mfd_res.append(image_res)
-        #                 print(f"### image_res.boxes={image_res.boxes.shape}")
         else :
             for index in tqdm(range(0, len(images), batch_size), desc="MFD Predict"):
                 mfd_res = [

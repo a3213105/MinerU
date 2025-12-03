@@ -10,32 +10,8 @@ from magic_pdf.model.sub_modules.mfd.yolov8.YOLOv8 import YOLOv8MFDModel
 from magic_pdf.model.sub_modules.mfr.unimernet.Unimernet import UnimernetModel
 from magic_pdf.model.sub_modules.ocr.paddleocr2pytorch.pytorch_paddle import PytorchPaddleOCR
 from magic_pdf.model.sub_modules.table.rapidtable.rapid_table import RapidTableModel
-# try:
-#     from magic_pdf_ascend_plugin.libs.license_verifier import (
-#         LicenseExpiredError, LicenseFormatError, LicenseSignatureError,
-#         load_license)
-#     from magic_pdf_ascend_plugin.model_plugin.ocr.paddleocr.ppocr_273_npu import ModifiedPaddleOCR
-#     from magic_pdf_ascend_plugin.model_plugin.table.rapidtable.rapid_table_npu import RapidTableModel
-#     license_key = load_license()
-#     logger.info(f'Using Ascend Plugin Success, License id is {license_key["payload"]["id"]},'
-#                 f' License expired at {license_key["payload"]["date"]["end_date"]}')
-# except Exception as e:
-#     if isinstance(e, ImportError):
-#         pass
-#     elif isinstance(e, LicenseFormatError):
-#         logger.error('Ascend Plugin: Invalid license format. Please check the license file.')
-#     elif isinstance(e, LicenseSignatureError):
-#         logger.error('Ascend Plugin: Invalid signature. The license may be tampered with.')
-#     elif isinstance(e, LicenseExpiredError):
-#         logger.error('Ascend Plugin: License has expired. Please renew your license.')
-#     elif isinstance(e, FileNotFoundError):
-#         logger.error('Ascend Plugin: Not found License file.')
-#     else:
-#         logger.error(f'Ascend Plugin: {e}')
-#     from magic_pdf.model.sub_modules.ocr.paddleocr.ppocr_273_mod import ModifiedPaddleOCR
-#     # from magic_pdf.model.sub_modules.ocr.paddleocr.ppocr_291_mod import ModifiedPaddleOCR
-#     from magic_pdf.model.sub_modules.table.rapidtable.rapid_table import RapidTableModel
-
+from magic_pdf.libs.config_reader import get_local_layoutreader_model_dir
+from magic_pdf.model.sub_modules.ov_operator_async import LayoutReaderProcessor
 
 def table_model_init(table_model_type, model_path, max_time, enable_ov, enable_bf16_det,
                      enable_bf16_rec, nstreams, _device_='cpu', lang=None, 
@@ -107,8 +83,6 @@ def langdetect_model_init(langdetect_model_weight, enable_ov, enable_bf16, devic
     return model
 
 def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
-    print(f"in layoutreader_model_init model_name={model_name}, "
-          f"enable_ov={enable_ov}, enable_bf16={enable_bf16}")
     from transformers import LayoutLMv3ForTokenClassification
     device = torch.device("cpu")
     if model_name == 'layoutreader':
@@ -116,7 +90,6 @@ def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
         layoutreader_model_dir = get_local_layoutreader_model_dir()
         if enable_ov :
             layoutreader_model_dir_ov = layoutreader_model_dir + "/layoutreader.xml"
-            print(f"layoutreader_model_dir_ov={layoutreader_model_dir_ov}")
             if os.path.exists(layoutreader_model_dir_ov):
                 ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
                 ov_model.setup_model(stream_num = 1, bf16=enable_bf16)
@@ -210,7 +183,6 @@ class AtomModelSingleton:
 
 def atom_model_init(model_name: str, **kwargs):
     atom_model = None
-    # print(f"### atom_model_init model_name={model_name}, kwargs={kwargs}")
     if model_name == AtomicModel.Layout:
         if kwargs.get('layout_model_name') == MODEL_NAME.LAYOUTLMv3:
             atom_model = layout_model_init(
@@ -280,8 +252,6 @@ def atom_model_init(model_name: str, **kwargs):
             logger.error('langdetect model name not allow')
             exit(1)
     elif model_name == AtomicModel.LayoutReader:
-        print(f"### atom_model_init model_name={model_name}, kwargs={kwargs}, "
-          f"AtomicModel.LayoutReader={AtomicModel.LayoutReader}")
         atom_model = layoutreader_model_init(
             MODEL_NAME.LayoutReader,
             kwargs.get('enable_ov'),

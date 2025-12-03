@@ -164,6 +164,7 @@ class UnimernetModel(object):
                         outputs = mm(mf_img)
                         outputs = outputs.cpu().numpy()
                         output = self.model.parser_result(outputs)
+                        onnx_program = torch.onnx.export(mm, mf_img, dynamo=False, report=True, strict=False)
                         # print(f"### UnimernetModel batch_predict: mf_img={mf_img.shape}, output={output}")
                         # with warnings.catch_warnings():
                         #     # warnings.filterwarnings("ignore")

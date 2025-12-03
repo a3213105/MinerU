@@ -90,17 +90,18 @@ class DocLayoutYOLOModel(object):
                             images_layout_res.append(layout_res)
             else :
                 for index in tqdm(range(0, len(images), batch_size), desc="Layout Predict"):
-                    doclayout_yolo_res = [
-                        image_res.cpu()
-                        for image_res in self.model.predict(
-                            images[index : index + batch_size],
-                            imgsz=1280,
-                            conf=0.10,
-                            iou=0.45,
-                            verbose=False,
-                            device=self.device,
-                        )
-                    ]
+                    with torch.no_grad():
+                        doclayout_yolo_res = [
+                            image_res.cpu()
+                            for image_res in self.model.predict(
+                                images[index : index + batch_size],
+                                imgsz=1280,
+                                conf=0.10,
+                                iou=0.45,
+                                verbose=False,
+                                device=self.device,
+                            )
+                        ]
                     for image_res in doclayout_yolo_res:
                         layout_res = []
                         for xyxy, conf, cla in zip(
@@ -117,7 +118,11 @@ class DocLayoutYOLOModel(object):
                             layout_res.append(new_item)
                         images_layout_res.append(layout_res)
         else :
-            for index in tqdm(range(0, len(images), batch_size), desc="Layout_OV Predict"):
+            if self.enable_bf16 :
+                desc="Layout_OV_BF16 Predict"
+            else :
+                desc="Layout_OV Predict"
+            for index in tqdm(range(0, len(images), batch_size), desc=desc):
                 doclayout_yolo_res = [
                     image_res.cpu()
                     for image_res in self.model.predict(

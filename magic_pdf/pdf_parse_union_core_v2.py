@@ -38,7 +38,6 @@ from magic_pdf.model.sub_modules.ov_operator_async import LayoutReaderProcessor
 
 os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'  # 禁止albumentations检查更新
 
-
 def __replace_STX_ETX(text_str: str):
     """Replace \u0002 and \u0003, as these characters become garbled when extracted using pymupdf. In fact, they were originally quotation marks.
     Drawback: This issue is only observed in English text; it has not been found in Chinese text so far.
@@ -55,14 +54,12 @@ def __replace_STX_ETX(text_str: str):
         return s
     return text_str
 
-
 # 连写字符拆分
 def __replace_ligatures(text: str):
     ligatures = {
         'ﬁ': 'fi', 'ﬂ': 'fl', 'ﬀ': 'ff', 'ﬃ': 'ffi', 'ﬄ': 'ffl', 'ﬅ': 'ft', 'ﬆ': 'st'
     }
     return re.sub('|'.join(map(re.escape, ligatures.keys())), lambda m: ligatures[m.group()], text)
-
 
 def chars_to_content(span):
     # 检查span中的char是否为空
@@ -95,10 +92,8 @@ def chars_to_content(span):
 
     del span['chars']
 
-
 LINE_STOP_FLAG = ('.', '!', '?', '。', '！', '？', ')', '）', '"', '”', ':', '：', ';', '；', ']', '】', '}', '}', '>', '》', '、', ',', '，', '-', '—', '–',)
 LINE_START_FLAG = ('(', '（', '"', '“', '【', '{', '《', '<', '「', '『', '【', '[',)
-
 
 def fill_char_in_spans(spans, all_chars):
 
@@ -121,7 +116,6 @@ def fill_char_in_spans(spans, all_chars):
             need_ocr_spans.append(span)
         del span['height'], span['width']
     return need_ocr_spans
-
 
 # 使用鲁棒性更强的中心点坐标判断
 def calculate_char_in_span(char_bbox, span_bbox, char, span_height_radio=0.33):
@@ -158,7 +152,6 @@ def calculate_char_in_span(char_bbox, span_bbox, char, span_height_radio=0.33):
         else:
             return False
 
-
 def remove_tilted_line(text_blocks):
     for block in text_blocks:
         remove_lines = []
@@ -172,7 +165,6 @@ def remove_tilted_line(text_blocks):
                 remove_lines.append(line)
         for line in remove_lines:
             block['lines'].remove(line)
-
 
 def calculate_contrast(img, img_mode) -> float:
     """
@@ -301,42 +293,6 @@ def txt_spans_extract_v2(pdf_page, spans, all_bboxes, all_discarded_blocks, lang
             span['np_img'] = span_img
     return spans
 
-
-def model_init(model_name: str, enable_ov, enable_bf16):
-    from transformers import LayoutLMv3ForTokenClassification
-    bf_16_support = enable_bf16
-    device = torch.device("cpu")
-    if model_name == 'layoutreader':
-        # 检测modelscope的缓存目录是否存在
-        layoutreader_model_dir = get_local_layoutreader_model_dir()
-        if enable_ov :
-            layoutreader_model_dir_ov = layoutreader_model_dir + "layoutreader.xml"
-            if os.path.exists(layoutreader_model_dir_ov):
-                ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
-                ov_model.setup_model(stream_num = 1, bf16=enable_bf16)
-                print(f"### load LayoutReaderProcessor model from {layoutreader_model_dir_ov}, enable_bf16={enable_bf16}")
-                return ov_model
-
-        if os.path.exists(layoutreader_model_dir):
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                layoutreader_model_dir
-            )
-        else:
-            logger.warning(
-                'local layoutreader model not exists, use online model from huggingface'
-            )
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                'hantian/layoutreader'
-            )
-        if bf_16_support:
-            model.to(device).eval().bfloat16()
-        else:
-            model.to(device).eval()
-    else:
-        logger.error('model name not allow')
-        exit(1)
-    return model
-
 def do_predict(boxes: List[List[int]], model) -> List[int]:
     from magic_pdf.model.sub_modules.reading_oreder.layoutreader.helpers import (
         boxes2inputs, parse_logits, prepare_inputs)
@@ -364,7 +320,6 @@ def do_predict(boxes: List[List[int]], model) -> List[int]:
                 ov_model = ov.convert_model(mm, example_input=inputs)
                 ov.save_model(ov_model, ov_path, compress_to_fp16=False)
     return parse_logits(logits, len(boxes))
-
 
 def cal_block_index(fix_blocks, sorted_bboxes):
     if sorted_bboxes is not None:
@@ -426,7 +381,6 @@ def cal_block_index(fix_blocks, sorted_bboxes):
 
     return fix_blocks
 
-
 def insert_lines_into_block(block_bbox, line_height, page_w, page_h):
     # block_bbox是一个元组(x0, y0, x1, y1)，其中(x0, y0)是左下角坐标，(x1, y1)是右上角坐标
     x0, y0, x1, y1 = block_bbox
@@ -467,7 +421,6 @@ def insert_lines_into_block(block_bbox, line_height, page_w, page_h):
 
     else:
         return [[x0, y0, x1, y1]]
-
 
 def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks):
     page_line_list = []
@@ -546,9 +499,7 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
     # print(f"LayoutLMv3 Reader")
     orders = do_predict(boxes, model)
     sorted_bboxes = [page_line_list[i] for i in orders]
-
     return sorted_bboxes
-
 
 def get_line_height(blocks):
     page_line_height_list = []
@@ -566,7 +517,6 @@ def get_line_height(blocks):
     else:
         return 10
 
-
 def process_groups(groups, body_key, caption_key, footnote_key):
     body_blocks = []
     caption_blocks = []
@@ -582,7 +532,6 @@ def process_groups(groups, body_key, caption_key, footnote_key):
             footnote_blocks.append(footnote_block)
     return body_blocks, caption_blocks, footnote_blocks
 
-
 def process_block_list(blocks, body_type, block_type):
     indices = [block['index'] for block in blocks]
     median_index = statistics.median(indices)
@@ -595,7 +544,6 @@ def process_block_list(blocks, body_type, block_type):
         'blocks': blocks,
         'index': median_index,
     }
-
 
 def revert_group_blocks(blocks):
     image_groups = {}
@@ -622,7 +570,6 @@ def revert_group_blocks(blocks):
         new_blocks.append(process_block_list(blocks, BlockType.TableBody, BlockType.Table))
 
     return new_blocks
-
 
 def remove_outside_spans(spans, all_bboxes, all_discarded_blocks):
     def get_block_bboxes(blocks, block_type_list):
@@ -664,7 +611,6 @@ def remove_outside_spans(spans, all_bboxes, all_discarded_blocks):
                 new_spans.append(span)
 
     return new_spans
-
 
 def parse_page_core(
     page_doc: PageableData, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang
@@ -871,7 +817,6 @@ def parse_page_core(
     )
     return page_info
 
-
 def pdf_parse_union(
     model_list,
     dataset: Dataset,
@@ -882,7 +827,6 @@ def pdf_parse_union(
     debug_mode=False,
     lang=None,
 ):
-
     pdf_bytes_md5 = compute_md5(dataset.data_bits())
 
     """初始化空的pdf_info_dict"""
@@ -902,20 +846,7 @@ def pdf_parse_union(
         logger.warning('end_page_id is out of range, use pdf_docs length')
         end_page_id = len(dataset) - 1
 
-    # """初始化启动时间"""
-    # start_time = time.time()
-    # t0 = time.time()
-
-    # for page_id, page in enumerate(dataset):
-    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages layout"):
-        # """debug时输出每页解析的耗时."""
-        # if debug_mode:
-            # time_now = time.time()
-            # logger.info(
-            #     f'page_id: {page_id}, last_page_cost_time: {round(time.time() - start_time, 2)}'
-            # )
-            # start_time = time_now
-
+    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages"):
         """解析pdf中的每一页"""
         if start_page_id <= page_id <= end_page_id:
             page_info = parse_page_core(

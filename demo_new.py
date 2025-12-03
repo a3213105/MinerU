@@ -16,7 +16,7 @@ def get_args():
     parser.add_argument('--enable_ov', action='store_false', default=True, help='enable_ov')
     parser.add_argument('--enable_bf16_det', action='store_false', default=True, help='enable_bf16_det')
     parser.add_argument('--enable_bf16_rec', action='store_false', default=True, help='enable_bf16_rec')
-    parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/ocr.pdf", help='Filenames of input images')
+    parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/demo1.pdf", help='Filenames of input images')
     parser.add_argument('--output', '-o', metavar='OUTPUT', nargs='+', help='Filenames of output images')
     parser.add_argument('--nstreams', '-n', type=int, default=8, help='Number of ov streams')
     

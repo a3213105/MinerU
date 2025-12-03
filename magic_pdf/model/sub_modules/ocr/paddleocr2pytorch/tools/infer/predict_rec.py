@@ -549,7 +549,11 @@ class TextRecognizer(BaseOCRV20):
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
                 # print(f"### norm_img={norm_img.shape}, {h}, {w}")
-            with tqdm(total=img_num, desc='OCR-rec_ov Predict', disable=not tqdm_enable) as pbar:
+            if self.enable_bf16:
+                desc='OCR-Rec_OV_BF16 Predict'
+            else :
+                desc='OCR-Rec_OV Predict'
+            with tqdm(total=img_num, desc=desc, disable=not tqdm_enable) as pbar:
                 preds = self.ov_rec(norm_img_batch)
                 pbar.update(img_num)
             rec_result = []
