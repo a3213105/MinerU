@@ -1,4 +1,5 @@
 import torch
+import os
 from loguru import logger
 
 from magic_pdf.config.constants import MODEL_NAME
@@ -105,6 +106,42 @@ def langdetect_model_init(langdetect_model_weight, enable_ov, enable_bf16, devic
     model = YOLOv11LangDetModel(langdetect_model_weight, enable_ov, enable_bf16, device)
     return model
 
+def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
+    print(f"in layoutreader_model_init model_name={model_name}, "
+          f"enable_ov={enable_ov}, enable_bf16={enable_bf16}")
+    from transformers import LayoutLMv3ForTokenClassification
+    device = torch.device("cpu")
+    if model_name == 'layoutreader':
+        # 检测modelscope的缓存目录是否存在
+        layoutreader_model_dir = get_local_layoutreader_model_dir()
+        if enable_ov :
+            layoutreader_model_dir_ov = layoutreader_model_dir + "/layoutreader.xml"
+            print(f"layoutreader_model_dir_ov={layoutreader_model_dir_ov}")
+            if os.path.exists(layoutreader_model_dir_ov):
+                ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
+                ov_model.setup_model(stream_num = 1, bf16=enable_bf16)
+                print(f"### load LayoutReaderProcessor model from {layoutreader_model_dir_ov}, enable_bf16={enable_bf16}")
+                return ov_model
+        bf_16_support = enable_bf16
+        if os.path.exists(layoutreader_model_dir):
+            model = LayoutLMv3ForTokenClassification.from_pretrained(
+                layoutreader_model_dir
+            )
+        else:
+            logger.warning(
+                'local layoutreader model not exists, use online model from huggingface'
+            )
+            model = LayoutLMv3ForTokenClassification.from_pretrained(
+                'hantian/layoutreader'
+            )
+        if bf_16_support:
+            model.to(device).eval().bfloat16()
+        else:
+            model.to(device).eval()
+    else:
+        logger.error('model name not allow')
+        exit(1)
+    return model
 
 def ocr_model_init(enable_ov: bool,
                    enable_bf16_det: bool,
@@ -242,6 +279,14 @@ def atom_model_init(model_name: str, **kwargs):
         else:
             logger.error('langdetect model name not allow')
             exit(1)
+    elif model_name == AtomicModel.LayoutReader:
+        print(f"### atom_model_init model_name={model_name}, kwargs={kwargs}, "
+          f"AtomicModel.LayoutReader={AtomicModel.LayoutReader}")
+        atom_model = layoutreader_model_init(
+            MODEL_NAME.LayoutReader,
+            kwargs.get('enable_ov'),
+            kwargs.get('enable_bf16')
+        )
     else:
         logger.error('model name not allow')
         exit(1)

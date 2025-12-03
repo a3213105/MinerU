@@ -56,7 +56,7 @@ class TextClassifier(BaseOCRV20):
                 import openvino as ov
                 try :
                     ov_model = ov.convert_model(self.net, example_input=torch.randn(1, 3, 960, 960))
-                    ov.save_model(ov_model, self.ov_file_name)
+                    ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
                     print(f"export ov model to {self.ov_file_name} ")
                 except Exception as e:
                     print(f"### convert_model failed: {e}, try simple convert_model")
@@ -138,7 +138,7 @@ class TextClassifier(BaseOCRV20):
                 if self.enable_ov and not os.path.isfile(self.ov_file_name):
                     import openvino as ov
                     ov_model = ov.convert_model(self.net, example_input=inp)
-                    ov.save_model(ov_model, self.ov_file_name)
+                    ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
                     print(f"export ov model to {self.ov_file_name} with example_input={inp.shape}")
             else:
                 prob_out = self.ov_cls(inp)

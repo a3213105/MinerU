@@ -6,7 +6,7 @@ import statistics
 import time
 import warnings
 from typing import List
-
+from pathlib import Path
 import cv2
 import fitz
 import torch
@@ -34,6 +34,7 @@ from magic_pdf.pre_proc.ocr_detect_all_bboxes import ocr_prepare_bboxes_for_layo
 from magic_pdf.pre_proc.ocr_dict_merge import fill_spans_in_blocks, fix_block_spans_v2, fix_discarded_block
 from magic_pdf.pre_proc.ocr_span_list_modify import get_qa_need_list_v2, remove_overlaps_low_confidence_spans, \
     remove_overlaps_min_spans, remove_x_overlapping_chars
+from magic_pdf.model.sub_modules.ov_operator_async import LayoutReaderProcessor
 
 os.environ['NO_ALBUMENTATIONS_UPDATE'] = '1'  # 禁止albumentations检查更新
 
@@ -285,16 +286,6 @@ def txt_spans_extract_v2(pdf_page, spans, all_bboxes, all_discarded_blocks, lang
     need_ocr_spans = fill_char_in_spans(new_spans, all_pymu_chars)
 
     if len(need_ocr_spans) > 0:
-
-        # 初始化ocr模型
-        # atom_model_manager = AtomModelSingleton()
-        # ocr_model = atom_model_manager.get_atom_model(
-        #     atom_model_name='ocr',
-        #     ocr_show_log=False,
-        #     det_db_box_thresh=0.3,
-        #     lang=lang
-        # )
-
         for span in need_ocr_spans:
             # 对span的bbox截图再ocr
             span_img = cut_image_to_pil_image(span['bbox'], pdf_page, mode='cv2')
@@ -308,35 +299,24 @@ def txt_spans_extract_v2(pdf_page, spans, all_bboxes, all_discarded_blocks, lang
             span['content'] = ''
             span['score'] = 1
             span['np_img'] = span_img
-
-
-            # ocr_res = ocr_model.ocr(span_img, det=False)
-            # if ocr_res and len(ocr_res) > 0:
-            #     if len(ocr_res[0]) > 0:
-            #         ocr_text, ocr_score = ocr_res[0][0]
-            #         # logger.info(f"ocr_text: {ocr_text}, ocr_score: {ocr_score}")
-            #         if ocr_score > 0.5 and len(ocr_text) > 0:
-            #             span['content'] = ocr_text
-            #             span['score'] = float(round(ocr_score, 2))
-            #         else:
-            #             spans.remove(span)
-
     return spans
 
 
-def model_init(model_name: str):
+def model_init(model_name: str, enable_ov, enable_bf16):
     from transformers import LayoutLMv3ForTokenClassification
-    device_name = get_device()
-    bf_16_support = False
-    if device_name.startswith("cuda"):
-        bf_16_support = torch.cuda.is_bf16_supported()
-    elif device_name.startswith("mps"):
-        bf_16_support = True
-
-    device = torch.device(device_name)
+    bf_16_support = enable_bf16
+    device = torch.device("cpu")
     if model_name == 'layoutreader':
         # 检测modelscope的缓存目录是否存在
         layoutreader_model_dir = get_local_layoutreader_model_dir()
+        if enable_ov :
+            layoutreader_model_dir_ov = layoutreader_model_dir + "layoutreader.xml"
+            if os.path.exists(layoutreader_model_dir_ov):
+                ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
+                ov_model.setup_model(stream_num = 1, bf16=enable_bf16)
+                print(f"### load LayoutReaderProcessor model from {layoutreader_model_dir_ov}, enable_bf16={enable_bf16}")
+                return ov_model
+
         if os.path.exists(layoutreader_model_dir):
             model = LayoutLMv3ForTokenClassification.from_pretrained(
                 layoutreader_model_dir
@@ -357,37 +337,36 @@ def model_init(model_name: str):
         exit(1)
     return model
 
-
-class ModelSingleton:
-    _instance = None
-    _models = {}
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def get_model(self, model_name: str):
-        if model_name not in self._models:
-            self._models[model_name] = model_init(model_name=model_name)
-        return self._models[model_name]
-
-
 def do_predict(boxes: List[List[int]], model) -> List[int]:
     from magic_pdf.model.sub_modules.reading_oreder.layoutreader.helpers import (
         boxes2inputs, parse_logits, prepare_inputs)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
-
         inputs = boxes2inputs(boxes)
-        inputs = prepare_inputs(inputs, model)
-        logits = model(**inputs).logits.cpu().squeeze(0)
+        if isinstance(model, LayoutReaderProcessor):
+            logits = model([inputs])[0][0]
+            logits = torch.from_numpy(logits)
+        else :
+            inputs = prepare_inputs(inputs, model)    
+            class model_wrapper(torch.nn.Module) :
+                def __init__(self, model) :
+                    super(model_wrapper, self).__init__()
+                    self.torch_model = model
+                def forward(self, input_ids, attention_mask, bbox) :
+                    return self.torch_model(input_ids=input_ids, attention_mask=attention_mask, bbox=bbox).logits
+            mm = model_wrapper(model)
+            with torch.no_grad():
+                logits = mm(inputs["input_ids"], inputs["attention_mask"], inputs["bbox"]).cpu().squeeze(0)
+            ov_path = Path("/tmp/layoutreader.xml")
+            if not ov_path.exists() :
+                import openvino as ov
+                ov_model = ov.convert_model(mm, example_input=inputs)
+                ov.save_model(ov_model, ov_path, compress_to_fp16=False)
     return parse_logits(logits, len(boxes))
 
 
 def cal_block_index(fix_blocks, sorted_bboxes):
-
     if sorted_bboxes is not None:
         # 使用layoutreader排序
         for block in fix_blocks:
@@ -561,10 +540,11 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
             1000 >= right >= left >= 0 and 1000 >= bottom >= top >= 0
         ), f'Invalid box. right: {right}, left: {left}, bottom: {bottom}, top: {top}'  # noqa: E126, E121
         boxes.append([left, top, right, bottom])
-    model_manager = ModelSingleton()
-    model = model_manager.get_model('layoutreader')
-    with torch.no_grad():
-        orders = do_predict(boxes, model)
+    model_manager = AtomModelSingleton()
+    model = model_manager.get_atom_model('layoutreader')
+    
+    # print(f"LayoutLMv3 Reader")
+    orders = do_predict(boxes, model)
     sorted_bboxes = [page_line_list[i] for i in orders]
 
     return sorted_bboxes
@@ -927,7 +907,7 @@ def pdf_parse_union(
     # t0 = time.time()
 
     # for page_id, page in enumerate(dataset):
-    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages"):
+    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages layout"):
         # """debug时输出每页解析的耗时."""
         # if debug_mode:
             # time_now = time.time()

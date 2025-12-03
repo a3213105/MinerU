@@ -25,6 +25,7 @@ class UnimernetModel(object):
         self.enable_ov = enable_ov
         self.enable_bf16 = enable_bf16
         self.ov_file_name = f"{weight_dir}.xml"
+        print(f"enable_ov={self.enable_ov}. ov_file_name={self.ov_file_name}")
         if self.enable_ov and os.path.isfile(self.ov_file_name):
             self.ov_unimernet = UnimernetModel(self.ov_file_name)
             self.ov_unimernet.setup_model(stream_num = 4, bf16=True)
@@ -32,10 +33,11 @@ class UnimernetModel(object):
             from .unimernet_hf import UnimernetModel
             self.ov_unimernet = None
             # print(f"### import UnimernetModel from {weight_dir}, self.enable_bf16={self.enable_bf16}")
-            if _device_.startswith("mps"):
-                self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
-            else:
-                self.model = UnimernetModel.from_pretrained(weight_dir)
+            self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+            # if _device_.startswith("mps"):
+            #     self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+            # else:
+            #     self.model = UnimernetModel.from_pretrained(weight_dir)
             self.device = _device_
             self.model.to(_device_)
             if not _device_.startswith("cpu"):
@@ -182,7 +184,6 @@ class UnimernetModel(object):
 
                     # mfr_res.extend(output["fixed_str"])
                     mfr_res.extend(output)
-
                     # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
                     current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
                     pbar.update(current_batch_size)

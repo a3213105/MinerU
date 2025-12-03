@@ -79,7 +79,10 @@ class OV_Operator(object):
         return config
 
     def __call__(self, input_tensors):
-        nsize=len(input_tensors)
+        if isinstance(input_tensors, list) :
+            nsize=len(input_tensors)
+        else :
+            nsize = 1
         if self.request and nsize==1:
             self.res.sync_clean()
             for i, input_tensor in enumerate(input_tensors):
@@ -87,7 +90,6 @@ class OV_Operator(object):
                 self.res.sync_parser(result, i)
         elif self.infer_queue :
             for i, input_tensor in enumerate(input_tensors):
-                print(f"input_tensor={input_tensor}")
                 self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=True)
             self.infer_queue.wait_all()
         else :
@@ -141,7 +143,6 @@ class RapidTableProcesser(OV_Operator):
 
     def __call__(self, args):
         return self.request.infer(args)
-
 
 class YoloProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
@@ -578,7 +579,39 @@ class DonutDecProcessor(OV_Operator):
             self.request.reset_state()
         if self.infer_queue:
             self.infer_queue.reset_state()
-        
+
+class LayoutReaderProcessor(OV_Operator):
+    def __init__(self, model, core=None, postprocess=None):
+        super().__init__(model, core, postprocess)
+
+    def setup_model(self, stream_num = 2, bf16=True) :       
+        super().setup_model(stream_num, bf16, None)
+        self.res = OV_Result(self.outputs)
+        if self.infer_queue :
+            self.infer_queue.set_callback(self.res.completion_callback)
+
+    def run(self, inputs, input_tensors):
+        return self.__call__(input_tensors)
+
+    def __call__(self, input_tensors) :
+        nsize = super().__call__(input_tensors)
+ 
+        res = []
+        if self.postprocess is None:
+            # print(f"input_tensors={input_tensors[0]['input_ids'].shape}")
+            # print(f"self.res.results={len(self.res.results)}, "
+            #       f"{len(self.res.results[0])}, "
+            #       f"{self.res.results[0][0][0].shape}")
+            for j in range(len(self.res.results[0])):
+                res_list = []
+                for i in range(nsize) :
+                    res_list.append(self.res.results[i][j][0])
+                res.append(res_list)
+        else :
+            for i in range(nsize) :
+                res.append(self.postprocess(self.res.results[i]))
+        return res
+  
 class LayoutLMv3Processor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)

@@ -177,6 +177,15 @@ class CustomPEKModel:
                 table_sub_model_name=self.table_sub_model_name
             )
 
+        #init LayoutReader
+        self.table_model = atom_model_manager.get_atom_model(
+                atom_model_name=AtomicModel.LayoutReader,
+                table_model_name=AtomicModel.LayoutReader,
+                enable_ov=enable_ov, 
+                enable_bf16 = enable_bf16_rec,
+                # nstreams = nstreams,
+            )
+
         logger.info('DocAnalysis init done!')
 
     def __call__(self, image):

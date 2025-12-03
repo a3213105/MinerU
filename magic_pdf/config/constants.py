@@ -53,6 +53,8 @@ class MODEL_NAME:
     RAPID_TABLE = 'rapid_table'
 
     YOLO_V11_LangDetect = 'yolo_v11n_langdetect'
+    
+    LayoutReader = 'layoutreader'
 
 
 PARSE_TYPE_TXT = 'txt'

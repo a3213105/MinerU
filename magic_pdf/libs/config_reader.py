@@ -16,7 +16,7 @@ def read_config():
     if os.path.isabs(CONFIG_FILE_NAME):
         config_file = CONFIG_FILE_NAME
     else:
-        home_dir = os.path.expanduser('~')
+        home_dir = os.path.expanduser('./')
         config_file = os.path.join(home_dir, CONFIG_FILE_NAME)
 
     if not os.path.exists(config_file):

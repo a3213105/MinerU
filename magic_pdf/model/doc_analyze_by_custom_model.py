@@ -138,10 +138,10 @@ def custom_model_init(
 
 def doc_analyze(
     dataset: Dataset,
-    enable_ov: bool, 
-    enable_bf16_det: bool, 
-    enable_bf16_rec: bool, 
-    nstreams: int,
+    enable_ov: bool =False, 
+    enable_bf16_det: bool =False, 
+    enable_bf16_rec: bool =False, 
+    nstreams=8,
     ocr: bool = False,
     show_log: bool = False,
     start_page_id=0,

@@ -10,3 +10,4 @@ class AtomicModel:
     OCR = "ocr"
     Table = "table"
     LangDetect = "langdetect"
+    LayoutReader = "layoutreader"
