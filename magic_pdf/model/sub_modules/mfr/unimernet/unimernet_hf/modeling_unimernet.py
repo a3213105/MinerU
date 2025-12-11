@@ -82,6 +82,8 @@ class UnimernetModel(VisionEncoderDecoderModel):
         config: Optional[PretrainedConfig] = None,
         encoder: Optional[PreTrainedModel] = None,
         decoder: Optional[PreTrainedModel] = None,
+        tokenizer: Optional = None,
+        transform: Optional = None,
     ):
         # VisionEncoderDecoderModel's checking log has bug, disable for temp.
         base_model_logger.disabled = True
@@ -94,8 +96,14 @@ class UnimernetModel(VisionEncoderDecoderModel):
             raise RuntimeError("config._name_or_path is required by UnimernetModel.")
 
         model_path = config._name_or_path
-        self.transform = UnimerSwinImageProcessor()
-        self.tokenizer = TokenizerWrapper(AutoTokenizer.from_pretrained(model_path))
+        if transform is None :
+            self.transform = UnimerSwinImageProcessor()
+        else :
+            self.transform = transform
+        if tokenizer is None:
+            self.tokenizer = TokenizerWrapper(AutoTokenizer.from_pretrained(model_path))
+        else :
+            self.tokenizer = tokenizer
         self._post_check()
     
     def _post_check(self):
@@ -192,7 +200,29 @@ class UnimernetModel(VisionEncoderDecoderModel):
         fixed_str = [latex_rm_whitespace(s) for s in pred_str]
         return fixed_str
 
+    def generate_enc(self, pixel_values, return_dict=False):
+        pixel_values = pixel_values.repeat(1, 3, 1, 1)
+        encoder_outputs, _ = self.encoder(pixel_values=pixel_values, return_dict=return_dict)
+        # print(f"### encoder_outputs={encoder_outputs.shape}")
+        enc_kv_cache = []
+        for i, layer in enumerate(self.decoder.model.decoder.layers):
+            key_values = layer.enc_key_values(encoder_outputs)
+            enc_kv_cache.append(key_values)
+        return encoder_outputs, enc_kv_cache
+
+    def generate_dec(self, encoder_outputs, enc_kv_cache):           
+        outputs = super().generate(
+            encoder_outputs=encoder_outputs,
+            decoder_enc_past_key_values=enc_kv_cache,
+        )
+        return outputs
+    
     def generate(self, pixel_values):
+        encoder_outputs, enc_kv_cache = self.generate_enc(pixel_values)
+        outputs1 = self.generate_dec(encoder_outputs, enc_kv_cache)
+        outputs1 = outputs1[:, 1:]
+        return outputs1
+        
         pixel_values = pixel_values.repeat(1, 3, 1, 1)
         outputs = super().generate(
             pixel_values=pixel_values,
@@ -200,6 +230,8 @@ class UnimernetModel(VisionEncoderDecoderModel):
             # decoder_start_token_id=self.tokenizer.tokenizer.bos_token_id,
             # do_sample=False,
         )
-
         outputs = outputs[:, 1:]
+        print(f"### OUT generate: outputs={outputs1.shape}")
+        print(f"### OUT original: outputs={outputs.shape}")
+        print(f"{outputs==outputs1}")
         return outputs

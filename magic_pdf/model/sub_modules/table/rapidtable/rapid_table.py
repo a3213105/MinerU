@@ -16,7 +16,7 @@ except ImportError as e:
 
 class RapidTableModel(object):
     def __init__(self, ocr_engine, table_sub_model_name='slanet_plus', 
-                 enable_ov = True, enable_bf16 = True):
+                 enable_ov = True, infer_type = True):
         sub_model_list = [model.value for model in ModelType]
         if table_sub_model_name is None:
             input_args = RapidTableInput()
@@ -31,18 +31,17 @@ class RapidTableModel(object):
             raise ValueError(f"Invalid table_sub_model_name: {table_sub_model_name}. It must be one of {sub_model_list}")
         self.table_model = RapidTable(input_args)
         self.enable_ov = enable_ov
-        self.enable_bf16 = enable_bf16
+        self.infer_type = infer_type
         if self.enable_ov:
             self.table_model_ov = RapidTableProcesser(slanet_plus_model_path)
-            self.table_model_ov.setup_model(stream_num = 1, bf16=self.enable_bf16)
+            self.table_model_ov.setup_model(stream_num = 1, infer_type=self.infer_type)
             def ov_infer(*args):
                 print(f"args={args}")
                 result = self.table_model_ov(args)
                 return result[0], result[1]
             self.table_model.table_structure.session = self.table_model_ov
-            print(f"### load table_model_ov model {slanet_plus_model_path}, bf16={self.enable_bf16}")
+            # print(f"### load table_model_ov model {slanet_plus_model_path}, infer_type={self.infer_type}")
         self.ocr_engine = ocr_engine
-
 
     def predict(self, image):
         bgr_image = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)

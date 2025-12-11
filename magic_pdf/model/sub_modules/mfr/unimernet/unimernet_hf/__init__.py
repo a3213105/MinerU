@@ -1,6 +1,6 @@
 from .unimer_swin import UnimerSwinConfig, UnimerSwinModel, UnimerSwinImageProcessor
 from .unimer_mbart import UnimerMBartConfig, UnimerMBartModel, UnimerMBartForCausalLM
-from .modeling_unimernet import UnimernetModel
+from .modeling_unimernet import UnimernetModel, TokenizerWrapper, latex_rm_whitespace
 
 __all__ = [
     "UnimerSwinConfig",
@@ -10,4 +10,6 @@ __all__ = [
     "UnimerMBartModel",
     "UnimerMBartForCausalLM",
     "UnimernetModel",
+    "TokenizerWrapper",
+    "latex_rm_whitespace",
 ]

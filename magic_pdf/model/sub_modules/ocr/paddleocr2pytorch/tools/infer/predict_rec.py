@@ -104,9 +104,9 @@ class TextRecognizer(BaseOCRV20):
             self.ov_nstreams = 8
             
         try :
-            self.enable_bf16 = args.enable_bf16_rec
+            self.infer_type = args.infer_type_rec
         except AttributeError:
-            self.enable_bf16 = True
+            self.infer_type = True
 
         self.ov_file_name = f"{args.rec_model_path}.xml"
         self.ov_rec = None
@@ -124,14 +124,9 @@ class TextRecognizer(BaseOCRV20):
                     print(f"### convert_model failed: {e}, try simple convert_model")
             if os.path.isfile(self.ov_file_name):
                 self.ov_rec = CTCSimpleOCR(self.ov_file_name)
-                self.ov_rec.setup_model(stream_num = self.ov_nstreams, bf16=self.enable_bf16, 
+                self.ov_rec.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type, 
                                         shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
-                print(f"### load OCR-Rec_ov model {self.ov_file_name}, ov_nstreams={self.ov_nstreams}, ",
-                    f"enable_bf16={self.enable_bf16}, rec_algorithm={self.rec_algorithm}")
         else:
-            print(f"### load paddle ocr model weights_path={self.weights_path}, ",
-                  f"using_ov={using_ov}, args={args}, "
-                  f"rec_algorithm={self.rec_algorithm}")
             self.load_state_dict(weights)
             self.net.eval()
             self.net.to(self.device)
@@ -513,7 +508,7 @@ class TextRecognizer(BaseOCRV20):
                         else:
                             inp = torch.from_numpy(norm_img_batch)
                             inp = inp.to(self.device)
-                            if self.enable_bf16:
+                            if self.infer_type == "BF16":
                                 with torch.no_grad(), torch.amp.autocast('cpu'):
                                     prob_out = self.net(inp)
                             else:
@@ -549,7 +544,7 @@ class TextRecognizer(BaseOCRV20):
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
                 # print(f"### norm_img={norm_img.shape}, {h}, {w}")
-            if self.enable_bf16:
+            if self.infer_type == "BF16":
                 desc='OCR-Rec_OV_BF16 Predict'
             else :
                 desc='OCR-Rec_OV Predict'

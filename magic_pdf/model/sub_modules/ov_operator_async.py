@@ -2,7 +2,7 @@ from array import array
 from locale import ABDAY_1
 import numpy as np
 from datetime import datetime
-from openvino.runtime import Core,Model, get_version, AsyncInferQueue, InferRequest, Layout, Type, Tensor
+from openvino import Core,Model, get_version, AsyncInferQueue, InferRequest, Layout, Type, Tensor
 from openvino.preprocess import PrePostProcessor, ColorFormat, ResizeAlgorithm
 
 import copy
@@ -41,24 +41,24 @@ class OV_Operator(object):
                 # print('input {}: {}'.format(it.get_friendly_name(),it.partial_shape))
         self.input_name = self.input_names[0]
 
-    def create_single_request(self, bf16) :
-        config = self.prepare_for_cpu(1, bf16)
+    def create_single_request(self, infer_type) :
+        config = self.prepare_for_cpu(1, infer_type)
         if self.model_dynamic is not None:
             self.exec_net_single = self.core.compile_model(self.model_dynamic, 'CPU', config)
         else :            
             self.exec_net_single = self.core.compile_model(self.model, 'CPU', config)
         self.request = self.exec_net_single.create_infer_request()
 
-    def setup_model(self, stream_num, bf16, shape) :
+    def setup_model(self, stream_num, infer_type, shape) :
         if shape is not None :
             self.model.reshape({self.input_name: shape})
-        config = self.prepare_for_cpu(stream_num, bf16)
+        config = self.prepare_for_cpu(stream_num, infer_type)
         self.exec_net = self.core.compile_model(self.model, 'CPU', config)
         self.num_requests = self.exec_net.get_property("OPTIMAL_NUMBER_OF_INFER_REQUESTS")
  
         if self.num_requests > 1:
             self.infer_queue = AsyncInferQueue(self.exec_net, self.num_requests)
-            self.create_single_request(bf16)
+            self.create_single_request(infer_type)
         else :
             self.request = self.exec_net.create_infer_request()
             self.infer_queue = None
@@ -66,15 +66,15 @@ class OV_Operator(object):
         # self.create_single_request(bf16)
         # print('Model ({})  using {} streams'.format(self.model.get_friendly_name(), self.num_requests))
 
-    def prepare_for_cpu(self, stream_num, bf16=True) :
+    def prepare_for_cpu(self, stream_num, infer_type='bf16') :
         device = "CPU"
         hint = 'THROUGHPUT' if stream_num>1 else 'LATENCY'
-        data_type = 'bf16' if bf16 else 'f32'
+        # infer_type = 'bf16' if bf16 else 'f32'
         config = {}
         supported_properties = self.core.get_property(device, 'SUPPORTED_PROPERTIES')
         config['NUM_STREAMS'] = str(stream_num)
         config['PERF_COUNT'] = 'NO'
-        config['INFERENCE_PRECISION_HINT'] = data_type #'bf16'#'f32'
+        config['INFERENCE_PRECISION_HINT'] = infer_type #'bf16'#'f32'
         config['PERFORMANCE_HINT'] = hint # 'THROUGHPUT' #"LATENCY"
         return config
 
@@ -128,8 +128,8 @@ class PaddleTextClsProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=False) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 1, infer_type='BF16') :
+        super().setup_model(stream_num, infer_type, None)
 
     def __call__(self, args):
         return self.request.infer(args)
@@ -138,8 +138,8 @@ class RapidTableProcesser(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=False) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 1, infer_type='BF16') :
+        super().setup_model(stream_num, infer_type, None)
 
     def __call__(self, args):
         return self.request.infer(args)
@@ -148,8 +148,8 @@ class YoloProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=False) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 1, infer_type='BF16') :
+        super().setup_model(stream_num, infer_type, None)
 
     def __call__(self, args):
         return self.request.infer(args)
@@ -158,7 +158,7 @@ class YoloV8OVProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, shape=None,
+    def setup_model(self, stream_num = 1, infer_type="F32", shape=None,
                     means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225]) :
         ppp = PrePostProcessor(self.model)
         print(f"self.input_names={self.input_names}")
@@ -179,7 +179,7 @@ class YoloV8OVProcessor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -201,7 +201,7 @@ class ClipSegProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 352, 352, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 352, 352, 3]) :
         ppp = PrePostProcessor(self.model)
         print(f"self.input_names={self.input_names}")
         ppp.input(self.input_names[0]).tensor() \
@@ -224,7 +224,7 @@ class ClipSegProcessor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -246,7 +246,7 @@ class EfficientMMOENetProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 224, 224, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 224, 224, 3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_names[0]).tensor() \
             .set_element_type(Type.u8) \
@@ -268,7 +268,7 @@ class EfficientMMOENetProcessor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -290,7 +290,7 @@ class AudioProjProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
         # ppp = PrePostProcessor(self.model)
         # ppp.input(self.input_name).tensor() \
         #     .set_element_type(Type.u8) \
@@ -312,7 +312,7 @@ class AudioProjProcessor(OV_Operator):
 
         # self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -334,7 +334,7 @@ class FaceLocaterProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
         # ppp = PrePostProcessor(self.model)
         # ppp.input(self.input_name).tensor() \
         #     .set_element_type(Type.u8) \
@@ -350,7 +350,7 @@ class FaceLocaterProcessor(OV_Operator):
         #     .scale([x*255.0 for x in scales]) 
         # self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -372,8 +372,8 @@ class DenoiseUnetProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 1, bf16=True, shape=None) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 1, infer_type="F32", shape=None) :
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -397,7 +397,7 @@ class ReferenceUnetProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 1, bf16=True, scale = 0.18215, shape=[-1, 4, 48, 48]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", scale = 0.18215, shape=[-1, 4, 48, 48]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_names[1]).tensor() \
             .set_shape(shape) \
@@ -409,7 +409,7 @@ class ReferenceUnetProcessor(OV_Operator):
         # ppp.input(self.input_names[0]).tensor() \
         #     .set_shape([-1]) 
         self.model = ppp.build()
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -433,7 +433,7 @@ class VaeEncProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 1, bf16=True, mean=127.5, scale= 127.5, shape=[1, 384, 384, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", mean=127.5, scale= 127.5, shape=[1, 384, 384, 3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -452,7 +452,7 @@ class VaeEncProcessor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -474,7 +474,7 @@ class VaeDecProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 4, bf16=True, scale=0.18215, shape=[1, 384, 384, 3]) :
+    def setup_model(self, stream_num = 4, infer_type="F32", scale=0.18215, shape=[1, 384, 384, 3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_layout(Layout('NCHW'))
@@ -486,7 +486,7 @@ class VaeDecProcessor(OV_Operator):
             .scale(scale)
 
         self.model = ppp.build()
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -513,7 +513,7 @@ class DonutEncProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 2, bf16=True, means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
+    def setup_model(self, stream_num = 2, infer_type="F32", means=[0.485, 0.456, 0.406], scales=[0.229, 0.224, 0.225], shape=[1, 1280, 1280, 3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -535,7 +535,7 @@ class DonutEncProcessor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -557,8 +557,8 @@ class DonutDecProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 2, bf16=True) :       
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 2, infer_type="F32") :       
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -584,8 +584,8 @@ class LayoutReaderProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 2, bf16=True) :       
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 2, infer_type="F32") :       
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -616,7 +616,7 @@ class LayoutLMv3Processor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 2, bf16=True, means=[0.5, 0.5, 0.5], scales=[0.5, 0.5, 0.5], shape=[1, 224, 224, 3]) :
+    def setup_model(self, stream_num = 2, infer_type="F32", means=[0.5, 0.5, 0.5], scales=[0.5, 0.5, 0.5], shape=[1, 224, 224, 3]) :
         # self.patch_transform = transforms.Compose([
         #     transforms.ToTensor(),
         #     transforms.Normalize(
@@ -648,7 +648,7 @@ class LayoutLMv3Processor(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
@@ -676,8 +676,8 @@ class RelationsProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 2, bf16=True, shape=None) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 2, infer_type="F32", shape=None) :
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -720,8 +720,8 @@ class Fingerprint(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 2, bf16=True, shape=None) :       
-        super().setup_model(stream_num, bf16, shape)
+    def setup_model(self, stream_num = 2, infer_type="F32", shape=None) :       
+        super().setup_model(stream_num, infer_type, shape)
         self.res = FingerprintResult(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -741,7 +741,7 @@ class CTCSimpleOCR(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 2, bf16=True, shape_static=None, shape_dynamic=None) :
+    def setup_model(self, stream_num = 2, infer_type="F32", shape_static=None, shape_dynamic=None) :
         scale = [127.5]
         if shape_static is not None and shape_dynamic is not None:
             self.model_dynamic = self.model.clone()
@@ -783,7 +783,7 @@ class CTCSimpleOCR(OV_Operator):
 
         self.model = ppp.build()
 
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.ocr_res = OV_Result(self.outputs)
         if self.infer_queue:
@@ -841,8 +841,8 @@ class SqlBertProcessor(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 2, bf16=True, shape=None) :
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 2, infer_type="F32", shape=None) :
+        super().setup_model(stream_num, infer_type, None)
         self.res = OV_Result(self.outputs)
         if self.infer_queue :
             self.infer_queue.set_callback(self.res.completion_callback)
@@ -884,7 +884,7 @@ class ObjDetector(OV_Operator):
         super().__init__(model, core, postprocess)
 
 
-    def setup_model(self, stream_num = 1, bf16=True, shape=[1, 3, 512, 512]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", shape=[1, 3, 512, 512]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -902,7 +902,7 @@ class ObjDetector(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
         self.det_res = OV_Result(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.det_res.completion_callback)
@@ -929,8 +929,8 @@ class PaddleTextDetector(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 1, bf16=True) :       
-        super().setup_model(stream_num, bf16, None)
+    def setup_model(self, stream_num = 1, infer_type="F32") :       
+        super().setup_model(stream_num, infer_type, None)
         self.det_res = OV_Result(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.det_res.completion_callback)
@@ -956,7 +956,7 @@ class TextDetector(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess)
 
-    def setup_model(self, stream_num = 1, bf16=True, shape=[1, -1,-1, 3]) :
+    def setup_model(self, stream_num = 1, infer_type="F32", shape=[1, -1,-1, 3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -974,7 +974,7 @@ class TextDetector(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
         self.det_res = OV_Result(self.outputs)
         if self.infer_queue:
             self.infer_queue.set_callback(self.det_res.completion_callback)
@@ -1000,7 +1000,7 @@ class TextRecognizerOV(OV_Operator):
     def __init__(self, model, core=None, postprocess=None):
         super().__init__(model, core, postprocess) 
 
-    def setup_model(self, stream_num = 2, bf16=True, shape=[-1,32,-1,3]) :
+    def setup_model(self, stream_num = 2, infer_type="F32", shape=[-1,32,-1,3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -1017,7 +1017,7 @@ class TextRecognizerOV(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
 
         self.ocr_res = OV_Result(self.outputs)
         self.infer_queue.set_callback(self.ocr_res.completion_callback)
@@ -1045,7 +1045,7 @@ class TextClassfier(OV_Operator):
     def __init__(self, model, core, postprocess):
         super().__init__(model, core=None, postprocess=None) 
 
-    def setup_model(self, stream_num=2, bf16=True, shape=[-1,32,-1,3]) :
+    def setup_model(self, stream_num=2, infer_type="F32", shape=[-1,32,-1,3]) :
         ppp = PrePostProcessor(self.model)
         ppp.input(self.input_name).tensor() \
             .set_element_type(Type.u8) \
@@ -1062,7 +1062,7 @@ class TextClassfier(OV_Operator):
 
         self.model = ppp.build()
         
-        super().setup_model(stream_num, bf16, None)
+        super().setup_model(stream_num, infer_type, None)
         self.cls_res = OV_Result(self.outputs)
         self.infer_queue.set_callback(self.cls_res.completion_callback)
 

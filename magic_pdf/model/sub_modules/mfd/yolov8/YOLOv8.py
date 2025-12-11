@@ -6,11 +6,11 @@ import torch
 from ...ov_operator_async import YoloProcessor
 
 class YOLOv8MFDModel(object):
-    def __init__(self, weight, enable_ov, enable_bf16, device="cpu"):
+    def __init__(self, weight, enable_ov, infer_type, device="cpu"):
         self.mfd_model = YOLO(weight, task="detect")
         self.device = device
         self.enable_ov = enable_ov
-        self.enable_bf16 = enable_bf16
+        self.infer_type = infer_type
         file_name = os.path.basename(weight)
         file_name_without_extension = os.path.splitext(file_name)[0]
         self.ov_file_name = f"{weight}/{file_name_without_extension}.xml".replace(".pt", "_openvino_model")
@@ -20,7 +20,7 @@ class YOLOv8MFDModel(object):
                     path = self.mfd_model.export(format="openvino", dynamic=True, simplify=False, device="CPU")  
                     print(f"### export YOLO from {weight} to {path}, ov_file={self.ov_file_name}")
             self.ov_yolo = YoloProcessor(self.ov_file_name)
-            self.ov_yolo.setup_model(stream_num = 1, bf16=self.enable_bf16)
+            self.ov_yolo.setup_model(stream_num = 1, infer_type=self.infer_type)
             args={'task': 'detect', 'imgsz': 1888, 'conf': 0.25, 'iou': 0.45, 'batch': 1, 'mode': 'predict',
                   'verbose': False, 'single_cls': False, 'save': False, 'rect': True, 'device': 'cpu'}
             self.mfd_model.predictor = (self.mfd_model._smart_load("predictor"))(overrides=args)
@@ -30,12 +30,11 @@ class YOLOv8MFDModel(object):
                 return torch.from_numpy(result[0])
             self.mfd_model.predictor.inference = infer
             # self.mfd_model.predictor.model.pt = False
-            print(f"### load MFD YOLOV8 Openvino model from {self.ov_file_name}, bf16={self.enable_bf16}")                
+            # print(f"### load MFD YOLOV8 Openvino model from {self.ov_file_name}, infer_type={self.infer_type}")                
         else :
             self.ov_yolo = None
 
     def predict(self, image):
-        # print("### YOLOv8 predict imgsz={imgsz.shape}")
         mfd_res = self.mfd_model.predict(
                 image, imgsz=1888, conf=0.25, iou=0.45, verbose=False, device=self.device
             )[0]
@@ -44,7 +43,7 @@ class YOLOv8MFDModel(object):
     def batch_predict(self, images: list, batch_size: int) -> list:
         images_mfd_res = []
         if self.ov_yolo is not None :
-            if self.enable_bf16 :
+            if self.infer_type == "BF16":
                 desc = "MFD_OV_bf16 Predict"
             else :
                 desc = "MFD_OV Predict"

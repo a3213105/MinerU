@@ -10,12 +10,19 @@ from magic_pdf.data.dataset import PymuDocDataset
 from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
 from magic_pdf.config.enums import SupportedPdfParseMethod
 
-
 def get_args():
     parser = argparse.ArgumentParser(description='Predict masks from input images')
-    parser.add_argument('--enable_ov', action='store_false', default=True, help='enable_ov')
-    parser.add_argument('--enable_bf16_det', action='store_false', default=True, help='enable_bf16_det')
-    parser.add_argument('--enable_bf16_rec', action='store_false', default=True, help='enable_bf16_rec')
+    parser.add_argument('--enable_ov', action='store_true', default=False, help='enable_ov')
+    parser.add_argument('--layout_type', type=str, default="F32", help='layout detection infer type')
+    parser.add_argument('--mfd_type', type=str, default="F32", help='formula detection infer type')
+    parser.add_argument('--mfr_enc_type', type=str, default="F32", help='formula recognition enc infer type')
+    parser.add_argument('--mfr_dec_type', type=str, default="F32", help='formula recognition dec infer type')
+    parser.add_argument('--ocr_det_type', type=str, default="F32", help='ocr detection infer type')
+    parser.add_argument('--ocr_rec_type', type=str, default="F32", help='ocr recognition infer type')
+    parser.add_argument('--table_type', type=str, default="F32", help='table infer type')
+    parser.add_argument('--lang_type', type=str, default="F32", help='language detection infer type')
+    parser.add_argument('--page_type', type=str, default="F32", help='page layout infer type')
+    parser.add_argument('--all', type=str, default=None, help='set all infer type')
     parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/demo1.pdf", help='Filenames of input images')
     parser.add_argument('--output', '-o', metavar='OUTPUT', nargs='+', help='Filenames of output images')
     parser.add_argument('--nstreams', '-n', type=int, default=8, help='Number of ov streams')
@@ -25,6 +32,19 @@ def get_args():
 __dir__ = os.path.dirname(os.path.abspath(__file__))
 
 args = get_args()
+
+if args.all is not None :
+    args.layout_type = args.all
+    args.mfd_type = args.all
+    args.mfr_enc_type = args.all
+    args.mfr_dec_type = args.all
+    args.ocr_det_type = args.all
+    args.ocr_rec_type = args.all
+    args.table_type = args.all
+    args.lang_type = args.all
+    args.page_type = args.all
+
+    
 # args
 name_without_extension = os.path.basename(args.input).split('.')[0]
 
@@ -47,16 +67,32 @@ start_time = t0
 ds = PymuDocDataset(pdf_bytes)
 ## inference
 if ds.classify() == SupportedPdfParseMethod.OCR:
-    infer_result = ds.apply(doc_analyze, enable_ov=args.enable_ov, 
-                            enable_bf16_det=args.enable_bf16_det, 
-                            enable_bf16_rec=args.enable_bf16_rec,
+    infer_result = ds.apply(doc_analyze,
+                            enable_ov=args.enable_ov, 
+                            Layout_infer_type=args.layout_type, 
+                            MFD_infer_type=args.mfd_type,
+                            MFR_enc_infer_type=args.mfr_enc_type,
+                            MFR_dec_infer_type=args.mfr_dec_type, 
+                            OCR_det_infer_type=args.ocr_det_type,
+                            OCR_rec_infer_type=args.ocr_rec_type,
+                            Table_infer_type=args.table_type,
+                            Lang_infer_type=args.lang_type,
+                            Page_infer_type=args.page_type,
                             nstreams = args.nstreams, 
                             ocr=True)
     pipe_result = infer_result.pipe_ocr_mode(image_writer)
 else:
-    infer_result = ds.apply(doc_analyze, enable_ov=args.enable_ov, 
-                            enable_bf16_det=args.enable_bf16_det, 
-                            enable_bf16_rec=args.enable_bf16_rec, 
+    infer_result = ds.apply(doc_analyze,
+                            enable_ov=args.enable_ov, 
+                            Layout_infer_type=args.layout_type, 
+                            MFD_infer_type=args.mfd_type,
+                            MFR_enc_infer_type=args.mfr_enc_type,
+                            MFR_dec_infer_type=args.mfr_dec_type, 
+                            OCR_det_infer_type=args.ocr_det_type,
+                            OCR_rec_infer_type=args.ocr_rec_type,
+                            Table_infer_type=args.table_type,
+                            Lang_infer_type=args.lang_type,
+                            Page_infer_type=args.page_type,
                             nstreams = args.nstreams,
                             ocr=False)
     pipe_result = infer_result.pipe_txt_mode(image_writer)
@@ -90,6 +126,9 @@ pipe_result.dump_middle_json(md_writer, f'{name_without_extension}_middle.json')
 end_time = time.perf_counter()
 # print(f"### PostProcess PDF: {(end_time - start_time) * 1000:.2f} ms")
 print(f"### Total End2End using time: {(end_time - t0) * 1000:.2f} ms, ",
-      f"enable_ov={args.enable_ov}, enable_bf16_det={args.enable_bf16_det}, ",
-      f"enable_bf16_rec={args.enable_bf16_rec}, nstreams={args.nstreams}")
-    
+      f"enable_ov={args.enable_ov}, Layout_infer_type={args.layout_type}, ",
+      f"MFD_infer_type={args.mfd_type}, MFR_enc_infer_type={args.mfr_enc_type}, ",
+      f"MFR_dec_infer_type={args.mfr_dec_type}, OCR_det_infer_type={args.ocr_det_type}, ",
+      f"OCR_rec_infer_type={args.ocr_rec_type}, Table_infer_type={args.table_type}, ",
+      f"Lang_infer_type={args.lang_type}, Page_infer_type={args.page_type}, ",
+      f"nstreams={args.nstreams}")

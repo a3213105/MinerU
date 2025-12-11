@@ -15,7 +15,7 @@ class BaseOCRV20:
     def read_pytorch_weights(self, weights_path):
         if not os.path.exists(weights_path):
             raise FileNotFoundError('{} is not existed.'.format(weights_path))
-        weights = torch.load(weights_path)
+        weights = torch.load(weights_path, weights_only=True)
         return weights
 
     def get_out_channels(self, weights):

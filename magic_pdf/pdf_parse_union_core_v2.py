@@ -495,6 +495,8 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
         boxes.append([left, top, right, bottom])
     model_manager = AtomModelSingleton()
     model = model_manager.get_atom_model('layoutreader')
+                                        #  enable_ov = self.enable_ov,
+                                        #  Page_infer_type = self.Page_infer_type)
     
     # print(f"LayoutLMv3 Reader")
     orders = do_predict(boxes, model)

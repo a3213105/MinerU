@@ -35,8 +35,15 @@ class ModelSingleton:
     def get_model(
         self,
         enable_ov: bool, 
-        enable_bf16_det: bool,
-        enable_bf16_rec: bool,
+        Layout_infer_type: str, 
+        MFD_infer_type: str,
+        MFR_enc_infer_type: str ,
+        MFR_dec_infer_type: str, 
+        OCR_det_infer_type: str,
+        OCR_rec_infer_type: str,
+        Table_infer_type: str,
+        Lang_infer_type: str,
+        Page_infer_type: str,
         nstreams: int,
         ocr: bool,
         show_log: bool,
@@ -49,8 +56,15 @@ class ModelSingleton:
         if key not in self._models:
             self._models[key] = custom_model_init(
                 enable_ov=enable_ov,
-                enable_bf16_det=enable_bf16_det,
-                enable_bf16_rec=enable_bf16_rec,
+                Layout_infer_type=Layout_infer_type, 
+                MFD_infer_type=MFD_infer_type,
+                MFR_enc_infer_type=MFR_enc_infer_type,
+                MFR_dec_infer_type=MFR_dec_infer_type, 
+                OCR_det_infer_type=OCR_det_infer_type,
+                OCR_rec_infer_type=OCR_rec_infer_type,
+                Table_infer_type=Table_infer_type,
+                Lang_infer_type=Lang_infer_type,
+                Page_infer_type=Page_infer_type,
                 nstreams=nstreams,
                 ocr=ocr,
                 show_log=show_log,
@@ -63,9 +77,16 @@ class ModelSingleton:
 
 
 def custom_model_init(
-    enable_ov: bool, 
-    enable_bf16_det: bool,
-    enable_bf16_rec: bool,
+    enable_ov: bool,
+    Layout_infer_type: str, 
+    MFD_infer_type: str,
+    MFR_enc_infer_type: str ,
+    MFR_dec_infer_type: str, 
+    OCR_det_infer_type: str,
+    OCR_rec_infer_type: str,
+    Table_infer_type: str,
+    Lang_infer_type: str,
+    Page_infer_type: str,
     nstreams: int,
     ocr: bool = False,
     show_log: bool = False,
@@ -111,8 +132,15 @@ def custom_model_init(
 
             model_input = {
                 'enable_ov': enable_ov,
-                'enable_bf16_det': enable_bf16_det,
-                'enable_bf16_rec': enable_bf16_rec,
+                'Layout_infer_type': Layout_infer_type, 
+                'MFD_infer_type': MFD_infer_type,
+                'MFR_enc_infer_type': MFR_enc_infer_type ,
+                'MFR_dec_infer_type': MFR_dec_infer_type, 
+                'OCR_det_infer_type': OCR_det_infer_type,
+                'OCR_rec_infer_type': OCR_rec_infer_type,
+                'Table_infer_type': Table_infer_type,
+                'Lang_infer_type': Lang_infer_type,
+                'Page_infer_type': Page_infer_type,
                 'nstreams': nstreams,
                 'ocr': ocr,
                 'show_log': show_log,
@@ -123,7 +151,6 @@ def custom_model_init(
                 'formula_config': formula_config,
                 'lang': lang,
             }
-
             custom_model = CustomPEKModel(**model_input)
         else:
             logger.error('Not allow model_name!')
@@ -138,9 +165,16 @@ def custom_model_init(
 
 def doc_analyze(
     dataset: Dataset,
-    enable_ov: bool =False, 
-    enable_bf16_det: bool =False, 
-    enable_bf16_rec: bool =False, 
+    enable_ov: bool, 
+    Layout_infer_type: str, 
+    MFD_infer_type: str, 
+    MFR_enc_infer_type: str, 
+    MFR_dec_infer_type: str, 
+    OCR_det_infer_type: str, 
+    OCR_rec_infer_type: str,
+    Table_infer_type: str,
+    Lang_infer_type: str,
+    Page_infer_type: str, 
     nstreams=8,
     ocr: bool = False,
     show_log: bool = False,
@@ -177,9 +211,12 @@ def doc_analyze(
 
     results = []
     for batch_image in batch_images:
-        result = may_batch_image_analyze(batch_image, enable_ov, enable_bf16_det, 
-                                         enable_bf16_rec, nstreams, ocr, show_log,
-                                         layout_model, formula_enable, table_enable)
+        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type, 
+                                         MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+                                         OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type,
+                                         Lang_infer_type, Page_infer_type, nstreams,
+                                         ocr, show_log, layout_model,
+                                         formula_enable, table_enable)
         results.extend(result)
 
     model_json = []
@@ -239,8 +276,12 @@ def batch_doc_analyze(
     processed_images_count = 0
     for index, batch_image in enumerate(batch_images):
         processed_images_count += len(batch_image)
-        logger.info(f'Batch {index + 1}/{len(batch_images)}: {processed_images_count} pages/{len(images_with_extra_info)} pages')
-        result = may_batch_image_analyze(batch_image, enable_ov, enable_bf16, True, show_log, layout_model, formula_enable, table_enable)
+        # logger.info(f'Batch {index + 1}/{len(batch_images)}: {processed_images_count} pages/{len(images_with_extra_info)} pages')
+        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type, 
+                                         MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+                                         OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type, 
+                                         Lang_infer_type, Page_infer_type, nstreams,
+                                         show_log, layout_model, formula_enable, table_enable)
         results.extend(result)
 
     infer_results = []
@@ -261,8 +302,15 @@ def batch_doc_analyze(
 def may_batch_image_analyze(
         images_with_extra_info: list[(np.ndarray, bool, str)],
         enable_ov: bool, 
-        enable_bf16_det: bool, 
-        enable_bf16_rec: bool, 
+        Layout_infer_type: str, 
+        MFD_infer_type: str, 
+        MFR_enc_infer_type: str, 
+        MFR_dec_infer_type: str, 
+        OCR_det_infer_type: str, 
+        OCR_rec_infer_type: str,
+        Table_infer_type: str,
+        Lang_infer_type: str,
+        Page_infer_type: str, 
         nstreams: int, 
         ocr: bool,
         show_log: bool = False,
@@ -298,7 +346,7 @@ def may_batch_image_analyze(
                 batch_ratio = 2
             else:
                 batch_ratio = 1
-            logger.info(f'gpu_memory: {gpu_memory} GB, batch_ratio: {batch_ratio}')
+            # logger.info(f'gpu_memory: {gpu_memory} GB, batch_ratio: {batch_ratio}')
         else:
             # Default batch_ratio when VRAM can't be determined
             batch_ratio = 1
@@ -306,15 +354,13 @@ def may_batch_image_analyze(
 
 
     # doc_analyze_start = time.time()
-
-    batch_model = BatchAnalyze(model_manager, enable_ov, enable_bf16_det, enable_bf16_rec, nstreams,
-                               batch_ratio, show_log, layout_model, formula_enable, table_enable)
+       
+    batch_model = BatchAnalyze(model_manager, enable_ov, Layout_infer_type, 
+                               MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+                               OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type,
+                               Lang_infer_type, Page_infer_type, nstreams, batch_ratio, show_log,
+                               layout_model, formula_enable, table_enable)
     results = batch_model(images_with_extra_info)
-
-    # gc_start = time.time()
-    clean_memory(get_device())
-    # gc_time = round(time.time() - gc_start, 2)
-    # logger.debug(f'gc time: {gc_time}')
 
     # doc_analyze_time = round(time.time() - doc_analyze_start, 2)
     # doc_analyze_speed = round(len(images) / doc_analyze_time, 2)

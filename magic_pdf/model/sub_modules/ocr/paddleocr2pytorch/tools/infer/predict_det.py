@@ -125,9 +125,10 @@ class TextDetector(BaseOCRV20):
             self.enable_ov = True
             
         try :
-            self.enable_bf16 = False #args.enable_bf16_rec
+            self.infer_type = args.infer_type_rec
         except AttributeError:
-            self.enable_bf16 = False
+            self.infer_type = 'F32'
+            print(f"args.infer_type_rec failed, set self.infer_type = 'F32'")
         self.ov_file_name = f"{self.weights_path}.xml"
         self.ov_det = None
         if self.enable_ov :
@@ -144,10 +145,10 @@ class TextDetector(BaseOCRV20):
                     print(f"### convert_model failed: {e}, try simple convert_model")
             if os.path.isfile(self.ov_file_name):
                 self.ov_det = PaddleTextDetector(self.ov_file_name)
-                self.ov_det.setup_model(stream_num = 1, bf16=self.enable_bf16,) 
+                self.ov_det.setup_model(stream_num = 1, infer_type=self.infer_type,) 
                                         # shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
-                print(f"### load OCR-Det_ov model {self.ov_file_name}, enable_bf16={self.enable_bf16}, ",
-                    f"det_algorithm={self.det_algorithm}")
+                # print(f"### load OCR-Det_ov model {self.ov_file_name}, infer_type={self.infer_type}, ",
+                #     f"det_algorithm={self.det_algorithm}")
         else:
             self.load_pytorch_weights(self.weights_path)
             self.net.eval()
@@ -223,7 +224,7 @@ class TextDetector(BaseOCRV20):
             outputs = {}
             outputs['maps'] = result
         else:
-            if self.enable_bf16:
+            if self.infer_type == "BF16":
                 with torch.no_grad() , torch.amp.autocast('cpu'):
                     inp = torch.from_numpy(img)
                     inp = inp.to(self.device)

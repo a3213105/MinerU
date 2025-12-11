@@ -13,9 +13,12 @@ from magic_pdf.model.sub_modules.table.rapidtable.rapid_table import RapidTableM
 from magic_pdf.libs.config_reader import get_local_layoutreader_model_dir
 from magic_pdf.model.sub_modules.ov_operator_async import LayoutReaderProcessor
 
-def table_model_init(table_model_type, model_path, max_time, enable_ov, enable_bf16_det,
-                     enable_bf16_rec, nstreams, _device_='cpu', lang=None, 
-                     table_sub_model_name=None):
+def table_model_init(table_model_type, model_path, max_time, enable_ov,
+                     OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type, nstreams,
+                     _device_='cpu', lang=None, table_sub_model_name=None):
+    print(f"###✅ table_model_init table_model_type={table_model_type}, model_path={model_path}, "
+          f"enable_ov={enable_ov}, OCR_det_infer_type={OCR_det_infer_type}, "
+          f"OCR_rec_infer_type={OCR_rec_infer_type}, Table_infer_type={Table_infer_type}, nstreams={nstreams}")
     if table_model_type == MODEL_NAME.STRUCT_EQTABLE:
         from magic_pdf.model.sub_modules.table.structeqtable.struct_eqtable import StructTableModel
         table_model = StructTableModel(model_path, max_new_tokens=2048, max_time=max_time)
@@ -25,8 +28,8 @@ def table_model_init(table_model_type, model_path, max_time, enable_ov, enable_b
             'model_dir': model_path,
             'device': _device_,
             'enable_ov': enable_ov, 
-            'enable_bf16_det': enable_bf16_det,
-            'enable_bf16_rec': enable_bf16_rec,
+            'infer_type_det': OCR_det_infer_type,
+            'infer_type_rec': OCR_rec_infer_type,
             'nstreams': nstreams,
         }
         table_model = TableMasterPaddleModel(config)
@@ -35,54 +38,55 @@ def table_model_init(table_model_type, model_path, max_time, enable_ov, enable_b
         ocr_engine = atom_model_manager.get_atom_model(
             atom_model_name='ocr',
             enable_ov=enable_ov, 
-            enable_bf16_det = enable_bf16_det,
-            enable_bf16_rec = enable_bf16_rec,
+            infer_type_det = OCR_det_infer_type,
+            infer_type_rec = OCR_rec_infer_type,
             nstreams = nstreams,
             ocr_show_log=False,
             det_db_box_thresh=0.5,
             det_db_unclip_ratio=1.6,
             lang=lang
         )
-        table_model = RapidTableModel(ocr_engine, table_sub_model_name, enable_ov, enable_bf16_rec)
+        table_model = RapidTableModel(ocr_engine, table_sub_model_name, enable_ov, Table_infer_type)
     else:
         logger.error('table model type not allow')
         exit(1)
 
     return table_model
 
-
-def mfd_model_init(weight, enable_ov, enable_bf16, device='cpu'):
-    if str(device).startswith('npu'):
-        device = torch.device(device)
-    mfd_model = YOLOv8MFDModel(weight, enable_ov, enable_bf16, device)
+def mfd_model_init(weight_dir, enable_ov, infer_type, device='cpu'):
+    print(f"###✅ mfd_model_init weight={weight_dir}, "
+          f"enable_ov={enable_ov}, infer_type={infer_type}")
+    mfd_model = YOLOv8MFDModel(weight_dir, enable_ov, infer_type, device)
     return mfd_model
 
-
-def mfr_model_init(weight_dir, cfg_path, enable_ov, enable_bf16, device='cpu'):
-    mfr_model = UnimernetModel(weight_dir, cfg_path, enable_ov, enable_bf16, device)
+def mfr_model_init(weight_dir, cfg_path, enable_ov, infer_type_enc, infer_type_dec, device='cpu'):
+    print(f"###✅ mfr_model_init weight_dir={weight_dir}, cfg_path={cfg_path}, "
+          f"enable_ov={enable_ov}, infer_type_enc={infer_type_enc}, infer_type_dec={infer_type_dec}")
+    mfr_model = UnimernetModel(weight_dir, cfg_path, enable_ov, infer_type_enc, infer_type_dec, device)
     return mfr_model
 
-
-def layout_model_init(weight, config_file, enable_ov, enable_bf16, device):
+def layout_model_init(weight_dir, config_file, enable_ov, infer_type, device):
+    print(f"###✅ layout_model_init weight_dir={weight_dir}, config_file={config_file}, "
+          f"enable_ov={enable_ov}, infer_type={infer_type}")
     from magic_pdf.model.sub_modules.layout.layoutlmv3.model_init import Layoutlmv3_Predictor
-    model = Layoutlmv3_Predictor(weight, config_file, enable_ov, enable_bf16, device)
+    model = Layoutlmv3_Predictor(weight, config_file, enable_ov, infer_type, device)
     return model
 
-
-def doclayout_yolo_model_init(weight, enable_ov, enable_bf16, device='cpu'):
-    if str(device).startswith('npu'):
-        device = torch.device(device)
-    model = DocLayoutYOLOModel(weight, enable_ov, enable_bf16, device)
+def doclayout_yolo_model_init(weight_dir, enable_ov, infer_type, device='cpu'):
+    print(f"###✅ doclayout_yolo_model_init weight_dir={weight_dir}, "
+          f"enable_ov={enable_ov}, infer_type={infer_type}")
+    model = DocLayoutYOLOModel(weight_dir, enable_ov, infer_type, device)
     return model
 
-
-def langdetect_model_init(langdetect_model_weight, enable_ov, enable_bf16, device='cpu'):
-    if str(device).startswith('npu'):
-        device = torch.device(device)
-    model = YOLOv11LangDetModel(langdetect_model_weight, enable_ov, enable_bf16, device)
+def langdetect_model_init(weight_dir, enable_ov, infer_type, device='cpu'):
+    print(f"###✅ langdetect_model_init weight_dir={weight_dir}, "
+          f"enable_ov={enable_ov}, infer_type={infer_type}")
+    model = YOLOv11LangDetModel(weight_dir, enable_ov, infer_type, device)
     return model
 
-def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
+def layoutreader_model_init(model_name: str, enable_ov, infer_type):
+    print(f"###✅ layoutreader_model_init model_name={model_name}, "
+          f"enable_ov={enable_ov}, infer_type={infer_type}")
     from transformers import LayoutLMv3ForTokenClassification
     device = torch.device("cpu")
     if model_name == 'layoutreader':
@@ -92,10 +96,9 @@ def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
             layoutreader_model_dir_ov = layoutreader_model_dir + "/layoutreader.xml"
             if os.path.exists(layoutreader_model_dir_ov):
                 ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
-                ov_model.setup_model(stream_num = 1, bf16=enable_bf16)
-                print(f"### load LayoutReaderProcessor model from {layoutreader_model_dir_ov}, enable_bf16={enable_bf16}")
+                ov_model.setup_model(stream_num = 1, infer_type=infer_type)
                 return ov_model
-        bf_16_support = enable_bf16
+        bf_16_support = True if infer_type=='BF16' else False
         if os.path.exists(layoutreader_model_dir):
             model = LayoutLMv3ForTokenClassification.from_pretrained(
                 layoutreader_model_dir
@@ -117,8 +120,8 @@ def layoutreader_model_init(model_name: str, enable_ov, enable_bf16):
     return model
 
 def ocr_model_init(enable_ov: bool,
-                   enable_bf16_det: bool,
-                   enable_bf16_rec: bool,
+                   infer_type_det: str,
+                   infer_type_rec: str,
                    nstreams: int = 1,
                    show_log: bool = False,
                    det_db_box_thresh=0.3,
@@ -126,12 +129,15 @@ def ocr_model_init(enable_ov: bool,
                    use_dilation=True,
                    det_db_unclip_ratio=1.8,
                    ):
+    print(f"###✅ ocr_model_init lang={lang}, "
+          f"enable_ov={enable_ov}, infer_type_det={infer_type_det}, "
+          f"infer_type_rec={infer_type_rec}, nstreams={nstreams}")
     if lang is not None and lang != '':
         # model = ModifiedPaddleOCR(
         model = PytorchPaddleOCR(
             enable_ov=enable_ov,
-            enable_bf16_det=enable_bf16_det,
-            enable_bf16_rec=enable_bf16_rec,
+            infer_type_det=infer_type_det,
+            infer_type_rec=infer_type_rec,
             nstreams=nstreams,
             show_log=show_log,
             det_db_box_thresh=det_db_box_thresh,
@@ -143,8 +149,8 @@ def ocr_model_init(enable_ov: bool,
         # model = ModifiedPaddleOCR(
         model = PytorchPaddleOCR(
             enable_ov=enable_ov,
-            enable_bf16_det=enable_bf16_det,
-            enable_bf16_rec=enable_bf16_rec,
+            infer_type_det=infer_type_det,
+            infer_type_rec=infer_type_rec,
             nstreams=nstreams,
             show_log=show_log,
             det_db_box_thresh=det_db_box_thresh,
@@ -189,14 +195,14 @@ def atom_model_init(model_name: str, **kwargs):
                 kwargs.get('layout_weights'),
                 kwargs.get('layout_config_file'),
                 kwargs.get('enable_ov'),
-                kwargs.get('enable_bf16'),
+                kwargs.get('Layout_infer_type'),
                 kwargs.get('device')
             )
         elif kwargs.get('layout_model_name') == MODEL_NAME.DocLayout_YOLO:
             atom_model = doclayout_yolo_model_init(
                 kwargs.get('doclayout_yolo_weights'),
                 kwargs.get('enable_ov'),
-                kwargs.get('enable_bf16'),
+                kwargs.get('Layout_infer_type'),
                 kwargs.get('device')
             )
         else:
@@ -206,7 +212,7 @@ def atom_model_init(model_name: str, **kwargs):
         atom_model = mfd_model_init(
             kwargs.get('mfd_weights'),
             kwargs.get('enable_ov'),
-            kwargs.get('enable_bf16'),
+            kwargs.get('MFD_infer_type'),
             kwargs.get('device')
         )
     elif model_name == AtomicModel.MFR:
@@ -214,14 +220,15 @@ def atom_model_init(model_name: str, **kwargs):
             kwargs.get('mfr_weight_dir'),
             kwargs.get('mfr_cfg_path'),
             kwargs.get('enable_ov'),
-            kwargs.get('enable_bf16'),
+            kwargs.get('MFR_enc_infer_type'),
+            kwargs.get('MFR_dec_infer_type'),
             kwargs.get('device')
         )
     elif model_name == AtomicModel.OCR:
         atom_model = ocr_model_init(
             kwargs.get('enable_ov'),
-            kwargs.get('enable_bf16_det'),
-            kwargs.get('enable_bf16_rec'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
             kwargs.get('nstreams'),
             kwargs.get('ocr_show_log'),
             kwargs.get('det_db_box_thresh'),
@@ -233,8 +240,9 @@ def atom_model_init(model_name: str, **kwargs):
             kwargs.get('table_model_path'),
             kwargs.get('table_max_time'),
             kwargs.get('enable_ov'),
-            kwargs.get('enable_bf16_det'),
-            kwargs.get('enable_bf16_rec'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
+            kwargs.get('Table_infer_type'),
             kwargs.get('nstreams'),
             kwargs.get('device'),
             kwargs.get('lang'),
@@ -245,7 +253,7 @@ def atom_model_init(model_name: str, **kwargs):
             atom_model = langdetect_model_init(
                 kwargs.get('langdetect_model_weight'),
                 kwargs.get('enable_ov'),
-                kwargs.get('enable_bf16'),
+                kwargs.get('Lang_infer_type'),
                 kwargs.get('device')
             )
         else:
@@ -255,7 +263,7 @@ def atom_model_init(model_name: str, **kwargs):
         atom_model = layoutreader_model_init(
             MODEL_NAME.LayoutReader,
             kwargs.get('enable_ov'),
-            kwargs.get('enable_bf16')
+            kwargs.get('Page_infer_type')
         )
     else:
         logger.error('model name not allow')

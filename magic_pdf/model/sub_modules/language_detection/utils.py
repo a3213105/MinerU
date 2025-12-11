@@ -63,7 +63,7 @@ def auto_detect_lang(pdf_bytes: bytes):
     return lang
 
 
-def model_init(model_name: str, enable_ov, enable_bf16):
+def model_init(model_name: str, enable_ov, infer_type):
     atom_model_manager = AtomModelSingleton()
 
     if model_name == MODEL_NAME.YOLO_V11_LangDetect:
@@ -74,7 +74,7 @@ def model_init(model_name: str, enable_ov, enable_bf16):
             langdetect_model_weight=str(os.path.join(root_dir, 'resources', 'yolov11-langdetect', 'yolo_v11_ft.pt')),
             device=device,
             enable_ov=enable_ov,
-            enable_bf16=enable_bf16,
+            infer_type=infer_type,
         )
     else:
         raise ValueError(f"model_name {model_name} not found")

@@ -20,7 +20,11 @@ from magic_pdf.model.sub_modules.ocr.paddleocr2pytorch.ocr_utils import (
 
 class CustomPEKModel:
 
-    def __init__(self, enable_ov, enable_bf16_det, enable_bf16_rec, nstreams,
+    def __init__(self, enable_ov, Layout_infer_type: str,
+                 MFD_infer_type: str,MFR_enc_infer_type: str,
+                 MFR_dec_infer_type: str, OCR_det_infer_type: str,
+                 OCR_rec_infer_type: str, Table_infer_type: str, 
+                 Page_infer_type: str,nstreams,
                  ocr: bool = False, show_log: bool = False, **kwargs):
         """
         ======== model init ========
@@ -66,21 +70,21 @@ class CustomPEKModel:
         self.apply_ocr = ocr
         self.lang = kwargs.get('lang', None)
 
-        logger.info(
-            'DocAnalysis init, this may take some times, layout_model: {}, apply_formula: {}, apply_ocr: {}, '
-            'apply_table: {}, table_model: {}, lang: {}'.format(
-                self.layout_model_name,
-                self.apply_formula,
-                self.apply_ocr,
-                self.apply_table,
-                self.table_model_name,
-                self.lang,
-            )
-        )
+        # logger.info(
+        #     'DocAnalysis init, this may take some times, layout_model: {}, apply_formula: {}, apply_ocr: {}, '
+        #     'apply_table: {}, table_model: {}, lang: {}'.format(
+        #         self.layout_model_name,
+        #         self.apply_formula,
+        #         self.apply_ocr,
+        #         self.apply_table,
+        #         self.table_model_name,
+        #         self.lang,
+        #     )
+        # )
         # 初始化解析方案
         self.device = kwargs.get('device', 'cpu')
 
-        logger.info('using device: {}'.format(self.device))
+        # logger.info('using device: {}'.format(self.device))
         models_dir = kwargs.get(
             'models_dir', os.path.join(root_dir, 'resources', 'models')
         )
@@ -99,7 +103,7 @@ class CustomPEKModel:
                     )
                 ),
                 enable_ov=enable_ov,
-                enable_bf16=enable_bf16_det, 
+                MFD_infer_type=MFD_infer_type, 
                 device=self.device,
             )
 
@@ -114,7 +118,8 @@ class CustomPEKModel:
                 mfr_weight_dir=mfr_weight_dir,
                 mfr_cfg_path=mfr_cfg_path,
                 enable_ov=enable_ov, 
-                enable_bf16=enable_bf16_rec,
+                MFR_enc_infer_type=MFR_enc_infer_type,
+                MFR_dec_infer_type=MFR_dec_infer_type,
                 device=self.device,
             )
 
@@ -133,7 +138,8 @@ class CustomPEKModel:
                         model_config_dir, 'layoutlmv3', 'layoutlmv3_base_inference.yaml'
                     )
                 ),
-                enable_ov=enable_ov, enable_bf16=enable_bf16_rec,
+                enable_ov=enable_ov,
+                Layout_infer_type=Layout_infer_type,
                 device='cpu' if str(self.device).startswith("mps") else self.device,
             )
         elif self.layout_model_name == MODEL_NAME.DocLayout_YOLO:
@@ -146,15 +152,15 @@ class CustomPEKModel:
                     )
                 ),
                 enable_ov=enable_ov, 
-                enable_bf16=enable_bf16_det,
+                Layout_infer_type=Layout_infer_type,
                 device=self.device,
             )
         # 初始化ocr
         self.ocr_model = atom_model_manager.get_atom_model(
             atom_model_name=AtomicModel.OCR,
             enable_ov=enable_ov, 
-            enable_bf16_det = enable_bf16_det,
-            enable_bf16_rec = enable_bf16_rec,
+            OCR_det_infer_type = OCR_det_infer_type,
+            OCR_rec_infer_type = OCR_rec_infer_type,
             nstreams = nstreams,
             ocr_show_log=show_log,
             det_db_box_thresh=0.3,
@@ -169,8 +175,9 @@ class CustomPEKModel:
                 table_model_path=str(os.path.join(models_dir, table_model_dir)),
                 table_max_time=self.table_max_time,
                 enable_ov=enable_ov, 
-                enable_bf16_det = enable_bf16_det,
-                enable_bf16_rec = enable_bf16_rec,
+                OCR_det_infer_type = OCR_det_infer_type,
+                OCR_rec_infer_type = OCR_rec_infer_type,
+                Table_infer_type = Table_infer_type,
                 nstreams = nstreams,
                 device=self.device,
                 ocr_engine=self.ocr_model,
@@ -178,15 +185,14 @@ class CustomPEKModel:
             )
 
         #init LayoutReader
-        self.table_model = atom_model_manager.get_atom_model(
+        self.layoutreader_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.LayoutReader,
-                table_model_name=AtomicModel.LayoutReader,
                 enable_ov=enable_ov, 
-                enable_bf16 = enable_bf16_rec,
+                Page_infer_type = Page_infer_type,
                 # nstreams = nstreams,
             )
 
-        logger.info('DocAnalysis init done!')
+        # logger.info('DocAnalysis init done!')
 
     def __call__(self, image):
         # layout检测
@@ -199,23 +205,23 @@ class CustomPEKModel:
             layout_res = self.layout_model.predict(image)
 
         layout_cost = round(time.time() - layout_start, 2)
-        logger.info(f'layout detection time: {layout_cost}')
+        # logger.info(f'layout detection time: {layout_cost}')
 
         if self.apply_formula:
             # 公式检测
             mfd_start = time.time()
             mfd_res = self.mfd_model.predict(image)
-            logger.info(f'mfd time: {round(time.time() - mfd_start, 2)}')
+            # logger.info(f'mfd time: {round(time.time() - mfd_start, 2)}')
 
             # 公式识别
             mfr_start = time.time()
             formula_list = self.mfr_model.predict(mfd_res, image)
             layout_res.extend(formula_list)
             mfr_cost = round(time.time() - mfr_start, 2)
-            logger.info(f'formula nums: {len(formula_list)}, mfr time: {mfr_cost}')
+            # logger.info(f'formula nums: {len(formula_list)}, mfr time: {mfr_cost}')
 
         # 清理显存
-        clean_vram(self.device, vram_threshold=6)
+        # clean_vram(self.device, vram_threshold=6)
 
         # 从layout_res中获取ocr区域、表格区域、公式区域
         ocr_res_list, table_res_list, single_page_mfdetrec_res = (
@@ -244,10 +250,10 @@ class CustomPEKModel:
                 layout_res.extend(ocr_result_list)
 
         ocr_cost = round(time.time() - ocr_start, 2)
-        if self.apply_ocr:
-            logger.info(f"ocr time: {ocr_cost}")
-        else:
-            logger.info(f"det time: {ocr_cost}")
+        # if self.apply_ocr:
+        #     logger.info(f"ocr time: {ocr_cost}")
+        # else:
+        #     logger.info(f"det time: {ocr_cost}")
 
         # 表格识别 table recognition
         if self.apply_table:
@@ -287,6 +293,6 @@ class CustomPEKModel:
                     logger.warning(
                         'table recognition processing fails, not get html return'
                     )
-            logger.info(f'table time: {round(time.time() - table_start, 2)}')
+            # logger.info(f'table time: {round(time.time() - table_start, 2)}')
 
         return layout_res

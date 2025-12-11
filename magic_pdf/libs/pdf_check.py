@@ -64,7 +64,7 @@ def detect_invalid_chars(src_pdf_bytes: bytes) -> bool:
         cid_chars_radio = 0
     else:
         cid_chars_radio = cid_count/(cid_count + text_len - cid_len)
-    logger.info(f"cid_count: {cid_count}, text_len: {text_len}, cid_chars_radio: {cid_chars_radio}")
+    # logger.info(f"cid_count: {cid_count}, text_len: {text_len}, cid_chars_radio: {cid_chars_radio}")
     '''当一篇文章存在5%以上的文本是乱码时,认为该文档为乱码文档'''
     if cid_chars_radio > 0.05:
         return False  # 乱码文档
@@ -91,7 +91,7 @@ def detect_invalid_chars_by_pymupdf(src_pdf_bytes: bytes) -> bool:
         uffd_chars_radio = 0
     else:
         uffd_chars_radio = uffd_count / text_len
-    logger.info(f"uffd_count: {uffd_count}, text_len: {text_len}, uffd_chars_radio: {uffd_chars_radio}")
+    # logger.info(f"uffd_count: {uffd_count}, text_len: {text_len}, uffd_chars_radio: {uffd_chars_radio}")
     '''当一篇文章存在1%以上的文本是乱码时,认为该文档为乱码文档'''
     if uffd_chars_radio > 0.01:
         return False  # 乱码文档
