@@ -16,7 +16,7 @@ app = Flask(__name__)
 def parse_args() -> argparse.Namespace:
     """Parse and return command line arguments"""
     parser = argparse.ArgumentParser(description='Predict masks from input images')
-    parser.add_argument('--enable_ov', '-e', action='store_true', default=False, help='enable_ov')
+    parser.add_argument('--disable_ov', '-o', action='store_true', default=False, help='disable_ov')
     parser.add_argument('--layout_type', type=str, default="bf16", help='layout detection infer type')
     parser.add_argument('--mfd_type', type=str, default="bf16", help='formula detection infer type')
     parser.add_argument('--mfr_enc_type', type=str, default="bf16", help='formula recognition enc infer type')
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--nstreams', '-n', type=int, default=8, help='Number of ov streams')
     parser.add_argument('--app', '-p', action='store_true', default=False,
                         help='True for app, False for serving')
-    # fmt: on
+    parser.add_argument('--disable_json', '-j', action='store_true', default=False, help='disable json output')
     return parser.parse_args()
 
 args = parse_args()
@@ -70,7 +70,7 @@ class PDF_Instance :
             args.table_type = args.all
             args.lang_type = args.all
             args.page_type = args.all
-        self.enable_ov = args.enable_ov
+        self.enable_ov = not args.disable_ov
         self.layout_type = args.layout_type
         self.mfd_type = args.mfd_type
         self.mfr_enc_type = args.mfr_enc_type
@@ -81,11 +81,11 @@ class PDF_Instance :
         self.lang_type = args.lang_type
         self.page_type = args.page_type
         self.nstreams = args.nstreams
-        self.return_md = True
-        self.return_json = True        
-        self.pdf_model = init_models(args.enable_ov, args.layout_type, args.mfd_type, args.mfr_enc_type,
-                        args.mfr_dec_type, args.ocr_det_type, args.ocr_rec_type, args.table_type,
-                        args.lang_type, args.page_type, args.nstreams, True)
+        self.return_md = False
+        self.return_json = not args.disable_json        
+        self.pdf_model = init_models(self.enable_ov, self.layout_type, self.mfd_type, self.mfr_enc_type,
+                        self.mfr_dec_type, self.ocr_det_type, self.ocr_rec_type, self.table_type,
+                        self.lang_type, self.page_type, self.nstreams, True)
 
     def process_pdf(self, pdf_raw: bytes) :
         return doc_analyze_direct(pdf_raw, self.pdf_model, self.enable_ov, self.layout_type, self.mfd_type,

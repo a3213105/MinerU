@@ -12,7 +12,7 @@ from magic_pdf.config.enums import SupportedPdfParseMethod
 
 def get_args():
     parser = argparse.ArgumentParser(description='Predict masks from input images')
-    parser.add_argument('--enable_ov', '-e', action='store_true', default=False, help='enable_ov')
+    parser.add_argument('--disable_ov', '-o', action='store_true', default=False, help='disable_ov')
     parser.add_argument('--layout_type', type=str, default="bf16", help='layout detection infer type')
     parser.add_argument('--mfd_type', type=str, default="bf16", help='formula detection infer type')
     parser.add_argument('--mfr_enc_type', type=str, default="bf16", help='formula recognition enc infer type')
@@ -23,8 +23,8 @@ def get_args():
     parser.add_argument('--lang_type', type=str, default="bf16", help='language detection infer type')
     parser.add_argument('--page_type', type=str, default="bf16", help='page layout infer type')
     parser.add_argument('--all', '-a', type=str, default=None, help='set all infer type')
-    parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/demo1.pdf", help='Filenames of input images')
-    parser.add_argument('--output', '-o', metavar='OUTPUT', nargs='+', help='Filenames of output images')
+    parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/demo1.pdf",
+                        help='Filenames of input pdfs')
     parser.add_argument('--nstreams', '-n', type=int, default=8, help='Number of ov streams')
     
     return parser.parse_args()
@@ -79,7 +79,7 @@ ds = PymuDocDataset(pdf_bytes)
 ## inference
 if ds.classify() == SupportedPdfParseMethod.OCR:
     infer_result = ds.apply(doc_analyze,
-                            enable_ov=args.enable_ov,
+                            enable_ov=(not args.disable_ov),
                             Layout_infer_type=args.layout_type,
                             MFD_infer_type=args.mfd_type,
                             MFR_enc_infer_type=args.mfr_enc_type,
@@ -94,7 +94,7 @@ if ds.classify() == SupportedPdfParseMethod.OCR:
     pipe_result = infer_result.pipe_ocr_mode(image_writer)
 else:
     infer_result = ds.apply(doc_analyze,
-                            enable_ov=args.enable_ov,
+                            enable_ov=(not args.disable_ov),
                             Layout_infer_type=args.layout_type,
                             MFD_infer_type=args.mfd_type,
                             MFR_enc_infer_type=args.mfr_enc_type,
@@ -140,7 +140,7 @@ pipe_result.dump_middle_json(md_writer, f'{name_without_extension}_middle.json')
 end_time = time.perf_counter()
 # print(f"### PostProcess PDF: {(end_time - start_time) * 1000:.2f} ms")
 print(f"### Total End2End using time: {(end_time - t0) * 1000:.2f} ms, ",
-      f"enable_ov={args.enable_ov}, Layout_infer_type={args.layout_type}, ",
+      f"enable_ov={(not args.disable_ov)}, Layout_infer_type={args.layout_type}, ",
       f"MFD_infer_type={args.mfd_type}, MFR_enc_infer_type={args.mfr_enc_type}, ",
       f"MFR_dec_infer_type={args.mfr_dec_type}, OCR_det_infer_type={args.ocr_det_type}, ",
       f"OCR_rec_infer_type={args.ocr_rec_type}, Table_infer_type={args.table_type}, ",
