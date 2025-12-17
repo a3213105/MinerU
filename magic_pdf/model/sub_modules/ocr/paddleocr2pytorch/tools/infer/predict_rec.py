@@ -21,6 +21,7 @@ class TextRecognizer(BaseOCRV20):
     def __init__(self, args, **kwargs):
         self.device = args.device
         self.rec_image_shape = [int(v) for v in args.rec_image_shape.split(",")]
+        # print(f"TextRecognizer: rec_image_shape={self.rec_image_shape}")
         self.character_type = args.rec_char_type
         self.rec_batch_num = args.rec_batch_num
         self.rec_algorithm = args.rec_algorithm
@@ -124,7 +125,7 @@ class TextRecognizer(BaseOCRV20):
                     print(f"### convert_model failed: {e}, try simple convert_model")
             if os.path.isfile(self.ov_file_name):
                 self.ov_rec = CTCSimpleOCR(self.ov_file_name)
-                self.ov_rec.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type, 
+                self.ov_rec.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type,
                                         shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
         else:
             self.load_state_dict(weights)
@@ -390,14 +391,14 @@ class TextRecognizer(BaseOCRV20):
         elapse = 0
         # for beg_img_no in range(0, img_num, batch_num):
         if self.ov_rec is None:
-            with tqdm(total=img_num, desc='OCR-rec Predict', disable=not tqdm_enable) as pbar:
+            desc_str=f'OCR-Rec_{self.infer_type} Predict'
+            with tqdm(total=img_num, desc=desc_str, disable=not tqdm_enable) as pbar:
                 index = 0
                 for beg_img_no in range(0, img_num, batch_num):
                     end_img_no = min(img_num, beg_img_no + batch_num)
                     norm_img_batch = []
                     max_wh_ratio = 0
                     for ino in range(beg_img_no, end_img_no):
-                        # h, w = img_list[ino].shape[0:2]
                         h, w = img_list[indices[ino]].shape[0:2]
                         wh_ratio = w * 1.0 / h
                         max_wh_ratio = max(max_wh_ratio, wh_ratio)
@@ -448,82 +449,73 @@ class TextRecognizer(BaseOCRV20):
                     norm_img_batch = norm_img_batch.copy()
 
                     starttime = time.time()
-                    # with torch.no_grad() , torch.amp.autocast('cpu'):
-                    # with torch.no_grad() :
-                    if True:
-                        if self.rec_algorithm == "SRN":
-                            encoder_word_pos_list = np.concatenate(encoder_word_pos_list)
-                            gsrm_word_pos_list = np.concatenate(gsrm_word_pos_list)
-                            gsrm_slf_attn_bias1_list = np.concatenate(
-                                gsrm_slf_attn_bias1_list)
-                            gsrm_slf_attn_bias2_list = np.concatenate(
-                                gsrm_slf_attn_bias2_list)
+                    if self.rec_algorithm == "SRN":
+                        encoder_word_pos_list = np.concatenate(encoder_word_pos_list)
+                        gsrm_word_pos_list = np.concatenate(gsrm_word_pos_list)
+                        gsrm_slf_attn_bias1_list = np.concatenate(
+                            gsrm_slf_attn_bias1_list)
+                        gsrm_slf_attn_bias2_list = np.concatenate(
+                            gsrm_slf_attn_bias2_list)
 
-                            # with torch.no_grad() , torch.amp.autocast('cpu'):
+                        inp = torch.from_numpy(norm_img_batch).to(self.device)
+                        encoder_word_pos_inp = torch.from_numpy(encoder_word_pos_list).to(self.device)
+                        gsrm_word_pos_inp = torch.from_numpy(gsrm_word_pos_list).to(self.device)
+                        gsrm_slf_attn_bias1_inp = torch.from_numpy(gsrm_slf_attn_bias1_list).to(self.device)
+                        gsrm_slf_attn_bias2_inp = torch.from_numpy(gsrm_slf_attn_bias2_list).to(self.device)
+
+                        if self.infer_type == "f32":
                             with torch.no_grad() :
-                                inp = torch.from_numpy(norm_img_batch)
-                                encoder_word_pos_inp = torch.from_numpy(encoder_word_pos_list)
-                                gsrm_word_pos_inp = torch.from_numpy(gsrm_word_pos_list)
-                                gsrm_slf_attn_bias1_inp = torch.from_numpy(gsrm_slf_attn_bias1_list)
-                                gsrm_slf_attn_bias2_inp = torch.from_numpy(gsrm_slf_attn_bias2_list)
-
-                                inp = inp.to(self.device)
-                                encoder_word_pos_inp = encoder_word_pos_inp.to(self.device)
-                                gsrm_word_pos_inp = gsrm_word_pos_inp.to(self.device)
-                                gsrm_slf_attn_bias1_inp = gsrm_slf_attn_bias1_inp.to(self.device)
-                                gsrm_slf_attn_bias2_inp = gsrm_slf_attn_bias2_inp.to(self.device)
-
                                 backbone_out = self.net.backbone(inp) # backbone_feat
                                 prob_out = self.net.head(backbone_out, [encoder_word_pos_inp, gsrm_word_pos_inp, gsrm_slf_attn_bias1_inp, gsrm_slf_attn_bias2_inp])
-                            # preds = {"predict": prob_out[2]}
-                            preds = {"predict": prob_out["predict"]}
-
-                        elif self.rec_algorithm == "SAR":
-                            # valid_ratios = np.concatenate(valid_ratios)
-                            # inputs = [
-                            #     norm_img_batch,
-                            #     valid_ratios,
-                            # ]
-
-                            # with torch.no_grad(), torch.amp.autocast('cpu'):
+                        else :
+                            with torch.no_grad(), torch.amp.autocast('cpu'):
+                                backbone_out = self.net.backbone(inp) # backbone_feat
+                                prob_out = self.net.head(backbone_out, [encoder_word_pos_inp, gsrm_word_pos_inp, gsrm_slf_attn_bias1_inp, gsrm_slf_attn_bias2_inp])                            
+                        preds = {"predict": prob_out["predict"]}
+                    elif self.rec_algorithm == "SAR":
+                        if self.infer_type == "f32":
                             with torch.no_grad():
                                 inp = torch.from_numpy(norm_img_batch)
                                 inp = inp.to(self.device)
                                 preds = self.net(inp)
-
-                        elif self.rec_algorithm == "CAN":
-                            norm_img_mask_batch = np.concatenate(norm_img_mask_batch)
-                            word_label_list = np.concatenate(word_label_list)
-                            inputs = [norm_img_batch, norm_img_mask_batch, word_label_list]
-
-                            inp = [torch.from_numpy(e_i) for e_i in inputs]
-                            inp = [e_i.to(self.device) for e_i in inp]
-                            # with torch.no_grad(), torch.amp.autocast('cpu'):
+                        else :
+                            with torch.no_grad(), torch.amp.autocast('cpu'):
+                                inp = torch.from_numpy(norm_img_batch)
+                                inp = inp.to(self.device)
+                                preds = self.net(inp)
+                    elif self.rec_algorithm == "CAN":
+                        norm_img_mask_batch = np.concatenate(norm_img_mask_batch)
+                        word_label_list = np.concatenate(word_label_list)
+                        inputs = [norm_img_batch, norm_img_mask_batch, word_label_list]
+                        inp = [torch.from_numpy(e_i) for e_i in inputs]
+                        inp = [e_i.to(self.device) for e_i in inp]
+                        if self.infer_type == "f32":
                             with torch.no_grad():
                                 outputs = self.net(inp)
                                 outputs = [v.cpu().float().numpy() for k, v in enumerate(outputs)]
-
-                            preds = outputs
-
+                        else :
+                            with torch.no_grad(), torch.amp.autocast('cpu'):
+                                outputs = self.net(inp)
+                                outputs = [v.cpu().float().numpy() for k, v in enumerate(outputs)]
+                        preds = outputs
+                    else:
+                        inp = torch.from_numpy(norm_img_batch)
+                        inp = inp.to(self.device)
+                        if self.infer_type == "f32":
+                            with torch.no_grad():
+                                prob_out = self.net(inp)
                         else:
-                            inp = torch.from_numpy(norm_img_batch)
-                            inp = inp.to(self.device)
-                            if self.infer_type == "BF16":
-                                with torch.no_grad(), torch.amp.autocast('cpu'):
-                                    prob_out = self.net(inp)
-                            else:
-                                with torch.no_grad():
-                                    prob_out = self.net(inp)
-                            if self.enable_ov and not os.path.isfile(self.ov_file_name):
-                                import openvino as ov
-                                ov_model = ov.convert_model(self.net, example_input=inp)
-                                ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
-                                print(f"export ov model to {self.ov_file_name} with example_input={inp.shape}")
-
-                            if isinstance(prob_out, list):
-                                preds = [v.cpu().float().numpy() for v in prob_out]
-                            else:
-                                preds = prob_out.cpu().float().numpy()
+                            with torch.no_grad(), torch.amp.autocast('cpu'):
+                                prob_out = self.net(inp)
+                        if self.enable_ov and not os.path.isfile(self.ov_file_name):
+                            import openvino as ov
+                            ov_model = ov.convert_model(self.net, example_input=inp)
+                            ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
+                            print(f"export ov model to {self.ov_file_name} with example_input={inp.shape}")
+                        if isinstance(prob_out, list):
+                            preds = [v.cpu().float().numpy() for v in prob_out]
+                        else:
+                            preds = prob_out.cpu().float().numpy()
 
                     rec_result = self.postprocess_op(preds)
                     for rno in range(len(rec_result)):
@@ -543,12 +535,9 @@ class TextRecognizer(BaseOCRV20):
                 norm_img = self.resize_norm_img_ov(norm_img, wh_ratio)
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
-                # print(f"### norm_img={norm_img.shape}, {h}, {w}")
-            if self.infer_type == "BF16":
-                desc='OCR-Rec_OV_BF16 Predict'
-            else :
-                desc='OCR-Rec_OV Predict'
-            with tqdm(total=img_num, desc=desc, disable=not tqdm_enable) as pbar:
+                # print(f"OCR-Rec norm_img={norm_img.shape}, {h}, {w}, {wh_ratio}")
+            desc_str=f'OCR-Rec_OV_{self.infer_type} Predict'
+            with tqdm(total=img_num, desc=desc_str, disable=not tqdm_enable) as pbar:
                 preds = self.ov_rec(norm_img_batch)
                 pbar.update(img_num)
             rec_result = []

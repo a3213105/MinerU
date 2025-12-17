@@ -23,7 +23,7 @@ class CustomPEKModel:
     def __init__(self, enable_ov, Layout_infer_type: str,
                  MFD_infer_type: str,MFR_enc_infer_type: str,
                  MFR_dec_infer_type: str, OCR_det_infer_type: str,
-                 OCR_rec_infer_type: str, Table_infer_type: str, 
+                 OCR_rec_infer_type: str, Table_infer_type: str,
                  Page_infer_type: str,nstreams,
                  ocr: bool = False, show_log: bool = False, **kwargs):
         """
@@ -88,7 +88,7 @@ class CustomPEKModel:
         models_dir = kwargs.get(
             'models_dir', os.path.join(root_dir, 'resources', 'models')
         )
-        logger.info('using models_dir: {}'.format(models_dir))
+        # logger.info('using models_dir: {}'.format(models_dir))
 
         atom_model_manager = AtomModelSingleton()
 
@@ -103,7 +103,7 @@ class CustomPEKModel:
                     )
                 ),
                 enable_ov=enable_ov,
-                MFD_infer_type=MFD_infer_type, 
+                MFD_infer_type=MFD_infer_type,
                 device=self.device,
             )
 
@@ -117,7 +117,7 @@ class CustomPEKModel:
                 atom_model_name=AtomicModel.MFR,
                 mfr_weight_dir=mfr_weight_dir,
                 mfr_cfg_path=mfr_cfg_path,
-                enable_ov=enable_ov, 
+                enable_ov=enable_ov,
                 MFR_enc_infer_type=MFR_enc_infer_type,
                 MFR_dec_infer_type=MFR_dec_infer_type,
                 device=self.device,
@@ -151,14 +151,14 @@ class CustomPEKModel:
                         models_dir, self.configs['weights'][self.layout_model_name]
                     )
                 ),
-                enable_ov=enable_ov, 
+                enable_ov=enable_ov,
                 Layout_infer_type=Layout_infer_type,
                 device=self.device,
             )
         # 初始化ocr
         self.ocr_model = atom_model_manager.get_atom_model(
             atom_model_name=AtomicModel.OCR,
-            enable_ov=enable_ov, 
+            enable_ov=enable_ov,
             OCR_det_infer_type = OCR_det_infer_type,
             OCR_rec_infer_type = OCR_rec_infer_type,
             nstreams = nstreams,
@@ -174,7 +174,7 @@ class CustomPEKModel:
                 table_model_name=self.table_model_name,
                 table_model_path=str(os.path.join(models_dir, table_model_dir)),
                 table_max_time=self.table_max_time,
-                enable_ov=enable_ov, 
+                enable_ov=enable_ov,
                 OCR_det_infer_type = OCR_det_infer_type,
                 OCR_rec_infer_type = OCR_rec_infer_type,
                 Table_infer_type = Table_infer_type,
@@ -187,7 +187,7 @@ class CustomPEKModel:
         #init LayoutReader
         self.layoutreader_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.LayoutReader,
-                enable_ov=enable_ov, 
+                enable_ov=enable_ov,
                 Page_infer_type = Page_infer_type,
                 # nstreams = nstreams,
             )

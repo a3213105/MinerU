@@ -127,8 +127,8 @@ class TextDetector(BaseOCRV20):
         try :
             self.infer_type = args.infer_type_rec
         except AttributeError:
-            self.infer_type = 'F32'
-            print(f"args.infer_type_rec failed, set self.infer_type = 'F32'")
+            self.infer_type = 'f32'
+            print(f"args.infer_type_rec failed, set self.infer_type = 'f32'")
         self.ov_file_name = f"{self.weights_path}.xml"
         self.ov_det = None
         if self.enable_ov :
@@ -218,19 +218,20 @@ class TextDetector(BaseOCRV20):
         img = np.expand_dims(img, axis=0)
         shape_list = np.expand_dims(shape_list, axis=0)
         img = img.copy()
+        # print(f"OCR-DET img={img.shape}")
         if self.ov_det :
             result = self.ov_det([img])
             result = torch.from_numpy(result)
             outputs = {}
             outputs['maps'] = result
         else:
-            if self.infer_type == "BF16":
-                with torch.no_grad() , torch.amp.autocast('cpu'):
+            if self.infer_type == "f32":
+                with torch.no_grad():
                     inp = torch.from_numpy(img)
                     inp = inp.to(self.device)
                     outputs = self.net(inp)
             else :
-                with torch.no_grad():
+                with torch.no_grad(), torch.amp.autocast('cpu'):
                     inp = torch.from_numpy(img)
                     inp = inp.to(self.device)
                     outputs = self.net(inp)

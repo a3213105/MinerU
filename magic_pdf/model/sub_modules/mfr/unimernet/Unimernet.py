@@ -32,6 +32,8 @@ UnimernetModelToken_PATH = "unimernet-token-openvino.xml"
 class UnimernetModel_ov :
     def __init__(self, ov_core, model_path, enc_type, dec_type, cache_size=1):
         ov_path = Path(model_path)
+        self.transform = UnimerSwinImageProcessor()
+        self.tokenizer = TokenizerWrapper(AutoTokenizer.from_pretrained(model_path))
 
         self.next_beam_idx = None
         self.infer_mode = 0
@@ -87,6 +89,7 @@ class UnimernetModel_ov :
         inputs = {'pixel_values':pixel_values}
         bs = pixel_values.shape[0]
         # enc_kv_cache = self.ov_encoder_model(inputs)
+        # print(f"ov_encoder_request inputs={pixel_values.shape}")
         self.ov_encoder_request.start_async(inputs, share_inputs=True)
         self.ov_decoder_request.reset_state()
         self.next_beam_idx = np.arange(bs, dtype=int)
@@ -123,19 +126,25 @@ class UnimernetModel_ov :
             this_peer_finished = unfinished_sequences.max() == 0
             if this_peer_finished :
                 break
+        # print(f"ov_decoder_request next_tokens={next_tokens.shape}, {self.ov_encoder_request.get_output_tensor(0).data.shape}")
         return input_ids
    
     def inference(self, sorted_images, batch_size) :
         # Process batches and store results
         mfr_res = []
-        with tqdm(total=len(sorted_images), desc="MFR_OV Predict") as pbar:
-            for index, mf_img in enumerate(dataloader):
-                outputs = self.model.generate(mf_img)
-                output = self.model.parser_result(outputs)
-                mfr_res.extend(output)
-                current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
-                pbar.update(current_batch_size)
+        desc_str = f"MFR_OV_{self.enc_type}_{self.dec_type} Predict"
+        for mf_img in tqdm(sorted_images, desc=desc_str):
+            mf_img = self.transform(mf_img).unsqueeze(0)
+            # print(f"MFR mf_img={mf_img.shape}")
+            outputs = self.generate(mf_img)
+            mfr_res.extend(outputs)
+        mfr_res = self.parser_result(mfr_res)
         return mfr_res
+
+    def parser_result(self, outputs) :
+        pred_str = self.tokenizer.token2str(outputs)
+        fixed_str = [latex_rm_whitespace(s) for s in pred_str]
+        return fixed_str
 
     @torch.inference_mode()
     def convert_ov_model(self, torch_model, pixel_values):  
@@ -164,7 +173,7 @@ class UnimernetModel_ov :
 
             def forward(self, input_ids, enc_past_key_values, past_key_values):
                 with torch.no_grad():
-                    outputs = self.model.decoder(input_ids=input_ids, 
+                    outputs = self.model.decoder(input_ids=input_ids,
                                                  enc_past_key_values=enc_past_key_values,
                                                  past_key_values=past_key_values,
                                                  use_cache=True,
@@ -238,8 +247,6 @@ class UnimernetModel_ov :
 
 class UnimernetModel(object):
     def __init__(self, weight_dir, cfg_path, enable_ov, enc_type, dec_type, _device_="cpu"):
-        self.transform = UnimerSwinImageProcessor()
-        self.tokenizer = TokenizerWrapper(AutoTokenizer.from_pretrained(weight_dir))
         self.ov_model = UnimernetModel_ov(None, weight_dir, enc_type, dec_type)
         if enable_ov and self.ov_model.using_ov :
             self.enable_ov = True
@@ -251,15 +258,10 @@ class UnimernetModel(object):
         self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
         self.device = _device_
         self.model.to(_device_)
-        if self.infer_type == "BF16":
+        if self.infer_type == "bf16":
             self.model = self.model.to(dtype=torch.bfloat16)
         self.model.eval()
         self.ov_model.torch_model = self.model
-
-    def parser_result(self, outputs) :
-        pred_str = self.tokenizer.token2str(outputs)
-        fixed_str = [latex_rm_whitespace(s) for s in pred_str]
-        return fixed_str
     
     def predict(self, mfd_res, image):
         formula_list = []
@@ -291,13 +293,17 @@ class UnimernetModel(object):
             res["latex"] = latex
         return formula_list
 
-    def batch_predict(self, images_mfd_res: list, images: list, batch_size: int = 64) -> list:
+    @torch.inference_mode()
+    def batch_predict(self, images_mfd_res: list, images: list, batch_size: int) -> list:
         sorted_images, index_mapping, backfill_list, images_formula_list = self.preprocess(images_mfd_res, images, batch_size)
-        mfr_res = self.inference(sorted_images, batch_size)
+        if self.enable_ov :
+            mfr_res = self.ov_model.inference(sorted_images, batch_size)
+        else :
+            mfr_res = self.inference(sorted_images, batch_size)
         self.postprocess(mfr_res, index_mapping, backfill_list)
         return images_formula_list
     
-    def preprocess(self, images_mfd_res: list, images: list, batch_size: int = 64):
+    def preprocess(self, images_mfd_res: list, images: list, batch_size: int):
         images_formula_list = []
         mf_image_list = []
         backfill_list = []
@@ -339,36 +345,29 @@ class UnimernetModel(object):
 
         return sorted_images, index_mapping, backfill_list, images_formula_list
 
+    @torch.inference_mode()
     def inference(self, sorted_images, batch_size) :
         # Create dataset with sorted images
-        dataset = MathDataset(sorted_images, transform=self.transform)
+        dataset = MathDataset(sorted_images, transform=self.model.transform)
         dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
         # Process batches and store results
         mfr_res = []
-        if self.enable_ov :
-            desc_str = f"MFR_OV_{self.ov_model.enc_type}_{self.ov_model.dec_type} Predict"
+        desc_str = f"MFR_{self.infer_type} Predict"
+        if self.infer_type == "bf16" :
             with tqdm(total=len(sorted_images), desc=desc_str) as pbar:
-                for index, mf_img in enumerate(dataloader):
-                    outputs = self.ov_model.generate(mf_img)
-                    output = self.parser_result(outputs)
-                    mfr_res.extend(output)
-                    current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
-                    pbar.update(current_batch_size)            
-        elif self.infer_type == "BF16" :
-            with tqdm(total=len(sorted_images), desc="MFR_BF16 Predict") as pbar:
                 for index, mf_img in enumerate(dataloader):
                     mf_img = mf_img.to(dtype=self.model.dtype)
                     mf_img = mf_img.to(self.device)
                     with torch.no_grad(), torch.amp.autocast('cpu'):
                         outputs = self.model.generate(mf_img)
                     outputs = outputs.cpu().numpy()
-                    output = self.parser_result(outputs)
+                    output = self.model.parser_result(outputs)
                     mfr_res.extend(output)
                     # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
                     current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
                     pbar.update(current_batch_size)
         else :
-            with tqdm(total=len(sorted_images), desc="MFR Predict") as pbar:
+            with tqdm(total=len(sorted_images), desc=desc_str) as pbar:
                 for index, mf_img in enumerate(dataloader):
                     mf_img = mf_img.to(dtype=self.model.dtype)
                     mf_img = mf_img.to(self.device)

@@ -305,18 +305,20 @@ def do_predict(boxes: List[List[int]], model) -> List[int]:
             logits = torch.from_numpy(logits)
         else :
             inputs = prepare_inputs(inputs, model)    
-            class model_wrapper(torch.nn.Module) :
-                def __init__(self, model) :
-                    super(model_wrapper, self).__init__()
-                    self.torch_model = model
-                def forward(self, input_ids, attention_mask, bbox) :
-                    return self.torch_model(input_ids=input_ids, attention_mask=attention_mask, bbox=bbox).logits
-            mm = model_wrapper(model)
             with torch.no_grad():
-                logits = mm(inputs["input_ids"], inputs["attention_mask"], inputs["bbox"]).cpu().squeeze(0)
-            ov_path = Path("/tmp/layoutreader.xml")
+                logits = model(input_ids=inputs["input_ids"], attention_mask=inputs["attention_mask"], bbox=inputs["bbox"]).logits.cpu().squeeze(0)
+            ov_path = Path(model.model_path + "/layoutreader.xml")
+            # print(f"#### ov_path={ov_path}")
             if not ov_path.exists() :
                 import openvino as ov
+                class model_wrapper(torch.nn.Module) :
+                    def __init__(self, model) :
+                        super(model_wrapper, self).__init__()
+                        self.torch_model = model.eval()
+                    def forward(self, input_ids, attention_mask, bbox) :
+                        with torch.no_grad():
+                            return self.torch_model(input_ids=input_ids, attention_mask=attention_mask, bbox=bbox).logits
+                mm = model_wrapper(model)
                 ov_model = ov.convert_model(mm, example_input=inputs)
                 ov.save_model(ov_model, ov_path, compress_to_fp16=False)
     return parse_logits(logits, len(boxes))
@@ -422,7 +424,7 @@ def insert_lines_into_block(block_bbox, line_height, page_w, page_h):
     else:
         return [[x0, y0, x1, y1]]
 
-def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks):
+def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks, layoutreader_model):
     page_line_list = []
 
     def add_lines_to_block(b):
@@ -493,13 +495,9 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
             1000 >= right >= left >= 0 and 1000 >= bottom >= top >= 0
         ), f'Invalid box. right: {right}, left: {left}, bottom: {bottom}, top: {top}'  # noqa: E126, E121
         boxes.append([left, top, right, bottom])
-    model_manager = AtomModelSingleton()
-    model = model_manager.get_atom_model('layoutreader')
-                                        #  enable_ov = self.enable_ov,
-                                        #  Page_infer_type = self.Page_infer_type)
-    
-    # print(f"LayoutLMv3 Reader")
-    orders = do_predict(boxes, model)
+    # model_manager = AtomModelSingleton()
+    # model = model_manager.get_atom_model('layoutreader')
+    orders = do_predict(boxes, layoutreader_model)
     sorted_bboxes = [page_line_list[i] for i in orders]
     return sorted_bboxes
 
@@ -615,7 +613,8 @@ def remove_outside_spans(spans, all_bboxes, all_discarded_blocks):
     return new_spans
 
 def parse_page_core(
-    page_doc: PageableData, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang
+    page_doc: PageableData, magic_model, page_id, pdf_bytes_md5, imageWriter,
+    parse_mode, lang, layout_readeer_model
 ):
     need_drop = False
     drop_reason = []
@@ -783,7 +782,7 @@ def parse_page_core(
     line_height = get_line_height(fix_blocks)
 
     """获取所有line并对line排序"""
-    sorted_bboxes = sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks)
+    sorted_bboxes = sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks, layout_readeer_model)
 
     """根据line的中位数算block的序列关系"""
     fix_blocks = cal_block_index(fix_blocks, sorted_bboxes)
@@ -848,11 +847,18 @@ def pdf_parse_union(
         logger.warning('end_page_id is out of range, use pdf_docs length')
         end_page_id = len(dataset) - 1
 
-    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc="Processing pages"):
+    model_manager = AtomModelSingleton()
+    layoutreader_model = model_manager.get_atom_model('layoutreader')
+    if layoutreader_model.using_ov:
+        desc_str = f"Pages_OV_{layoutreader_model.infer_type} Predict"
+    else :
+        desc_str = f"Pages_{layoutreader_model.infer_type} Predict"
+
+    for page_id, page in tqdm(enumerate(dataset), total=len(dataset), desc=desc_str):
         """解析pdf中的每一页"""
         if start_page_id <= page_id <= end_page_id:
             page_info = parse_page_core(
-                page, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang
+                page, magic_model, page_id, pdf_bytes_md5, imageWriter, parse_mode, lang, layoutreader_model
             )
         else:
             page_info = page.get_page_info()
@@ -944,7 +950,7 @@ def pdf_parse_union(
         'pdf_info': pdf_info_list,
     }
     # t3 = time.time()
-    clean_memory(get_device())
+    # clean_memory(get_device())
     # print(f"### processing page time: {(t1 - t0)*1000:.2f} ms, pages : {len(dataset)}")
     # print(f"### ocr page time: {(t2 - t1)*1000:.2f} ms, images : {len(img_crop_list)}, image_count={image_count}, infer_count={infer_count}")
     # print(f"### page llm time: {(t3 - t2)*1000:.2f} ms, pdf_info_list: {len(pdf_info_dict)}")

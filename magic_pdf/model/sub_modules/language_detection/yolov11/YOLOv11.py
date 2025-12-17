@@ -109,7 +109,7 @@ class YOLOv11LangDetModel(object):
             for temp_image in temp_images:
                 all_images.append(resize_images_to_224(temp_image))
         # langdetect_start = time.time()
-        images_lang_res = self.batch_predict(all_images, batch_size=256)
+        images_lang_res = self.batch_predict(all_images, batch_size=256)#
         # logger.info(f"image number of langdetect: {len(images_lang_res)}, langdetect time: {round(time.time() - langdetect_start, 2)}")
         if len(images_lang_res) > 0:
             count_dict = Counter(images_lang_res)

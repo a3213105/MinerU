@@ -12,13 +12,15 @@ from magic_pdf.model.sub_modules.ocr.paddleocr2pytorch.pytorch_paddle import Pyt
 from magic_pdf.model.sub_modules.table.rapidtable.rapid_table import RapidTableModel
 from magic_pdf.libs.config_reader import get_local_layoutreader_model_dir
 from magic_pdf.model.sub_modules.ov_operator_async import LayoutReaderProcessor
+from magic_pdf.libs.config_reader import get_device, get_local_models_dir
 
 def table_model_init(table_model_type, model_path, max_time, enable_ov,
                      OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type, nstreams,
                      _device_='cpu', lang=None, table_sub_model_name=None):
     print(f"###✅ table_model_init table_model_type={table_model_type}, model_path={model_path}, "
           f"enable_ov={enable_ov}, OCR_det_infer_type={OCR_det_infer_type}, "
-          f"OCR_rec_infer_type={OCR_rec_infer_type}, Table_infer_type={Table_infer_type}, nstreams={nstreams}")
+          f"OCR_rec_infer_type={OCR_rec_infer_type}, Table_infer_type={Table_infer_type}, "
+          f"nstreams={nstreams}, table_sub_model_name={table_sub_model_name}")
     if table_model_type == MODEL_NAME.STRUCT_EQTABLE:
         from magic_pdf.model.sub_modules.table.structeqtable.struct_eqtable import StructTableModel
         table_model = StructTableModel(model_path, max_new_tokens=2048, max_time=max_time)
@@ -27,7 +29,7 @@ def table_model_init(table_model_type, model_path, max_time, enable_ov,
         config = {
             'model_dir': model_path,
             'device': _device_,
-            'enable_ov': enable_ov, 
+            'enable_ov': enable_ov,
             'infer_type_det': OCR_det_infer_type,
             'infer_type_rec': OCR_rec_infer_type,
             'nstreams': nstreams,
@@ -37,7 +39,7 @@ def table_model_init(table_model_type, model_path, max_time, enable_ov,
         atom_model_manager = AtomModelSingleton()
         ocr_engine = atom_model_manager.get_atom_model(
             atom_model_name='ocr',
-            enable_ov=enable_ov, 
+            enable_ov=enable_ov,
             infer_type_det = OCR_det_infer_type,
             infer_type_rec = OCR_rec_infer_type,
             nstreams = nstreams,
@@ -46,7 +48,7 @@ def table_model_init(table_model_type, model_path, max_time, enable_ov,
             det_db_unclip_ratio=1.6,
             lang=lang
         )
-        table_model = RapidTableModel(ocr_engine, table_sub_model_name, enable_ov, Table_infer_type)
+        table_model = RapidTableModel(model_path, ocr_engine, table_sub_model_name, enable_ov, Table_infer_type)
     else:
         logger.error('table model type not allow')
         exit(1)
@@ -85,55 +87,59 @@ def langdetect_model_init(weight_dir, enable_ov, infer_type, device='cpu'):
     return model
 
 def layoutreader_model_init(model_name: str, enable_ov, infer_type):
-    print(f"###✅ layoutreader_model_init model_name={model_name}, "
-          f"enable_ov={enable_ov}, infer_type={infer_type}")
-    from transformers import LayoutLMv3ForTokenClassification
+    layoutreader_model_dir = get_local_layoutreader_model_dir()
+    print(f"###✅ layoutreader_model_init model_path={layoutreader_model_dir}, "
+                f"enable_ov={enable_ov}, infer_type={infer_type}")
     device = torch.device("cpu")
     if model_name == 'layoutreader':
         # 检测modelscope的缓存目录是否存在
-        layoutreader_model_dir = get_local_layoutreader_model_dir()
         if enable_ov :
             layoutreader_model_dir_ov = layoutreader_model_dir + "/layoutreader.xml"
             if os.path.exists(layoutreader_model_dir_ov):
                 ov_model = LayoutReaderProcessor(layoutreader_model_dir_ov)
                 ov_model.setup_model(stream_num = 1, infer_type=infer_type)
                 return ov_model
-        bf_16_support = True if infer_type=='BF16' else False
+        from transformers import LayoutLMv3ForTokenClassification
+        class LayoutLMv3ForTokenClassificationWrapper:
+            def __init__(self, model, model_path, infer_type, device) :
+                self.device = device
+                self.infer_type = infer_type
+                self.model = model
+                if self.infer_type=='bf16':
+                    self.model = model.to(self.device).eval().bfloat16()
+                elif self.infer_type=='f16':
+                    self.model = model.to(self.device).eval().float16()
+                else:
+                    self.model = model.to(self.device).eval()
+                self.dtype = self.model.dtype
+                self.using_ov = False
+                self.model_path = model_path
+                # print(f"### LayoutLMv3ForTokenClassificationWrapper infer_type={infer_type}, dtype={self.dtype}")
+            
+            def eval(self) :
+                return self.model.eval()
+                
+            def __call__(self, **kargs):
+                return self.model(**kargs)
+
         if os.path.exists(layoutreader_model_dir):
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                layoutreader_model_dir
-            )
+            model = LayoutLMv3ForTokenClassification.from_pretrained(layoutreader_model_dir)
         else:
-            logger.warning(
-                'local layoutreader model not exists, use online model from huggingface'
-            )
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                'hantian/layoutreader'
-            )
-        if bf_16_support:
-            model.to(device).eval().bfloat16()
-        else:
-            model.to(device).eval()
+            logger.warning('local layoutreader model not exists, use online model from huggingface')
+            model = LayoutLMv3ForTokenClassification.from_pretrained('hantian/layoutreader')
+        model_wrapper = LayoutLMv3ForTokenClassificationWrapper(model, layoutreader_model_dir, infer_type, device)
     else:
         logger.error('model name not allow')
         exit(1)
-    return model
+    return model_wrapper
 
-def ocr_model_init(enable_ov: bool,
-                   infer_type_det: str,
-                   infer_type_rec: str,
-                   nstreams: int = 1,
-                   show_log: bool = False,
-                   det_db_box_thresh=0.3,
-                   lang=None,
-                   use_dilation=True,
-                   det_db_unclip_ratio=1.8,
-                   ):
-    print(f"###✅ ocr_model_init lang={lang}, "
+def ocr_model_init(enable_ov: bool, infer_type_det: str, infer_type_rec: str, nstreams: int = 1, show_log: bool = False,
+                   det_db_box_thresh=0.3, lang=None, use_dilation=True, det_db_unclip_ratio=1.8,):
+    ocr_models_dir = os.path.join(get_local_models_dir(), 'OCR', 'paddleocr_torch')
+    print(f"###✅ ocr_model_init lang={lang}, ocr_models_dir={ocr_models_dir}, "
           f"enable_ov={enable_ov}, infer_type_det={infer_type_det}, "
           f"infer_type_rec={infer_type_rec}, nstreams={nstreams}")
     if lang is not None and lang != '':
-        # model = ModifiedPaddleOCR(
         model = PytorchPaddleOCR(
             enable_ov=enable_ov,
             infer_type_det=infer_type_det,
@@ -146,7 +152,6 @@ def ocr_model_init(enable_ov: bool,
             det_db_unclip_ratio=det_db_unclip_ratio,
         )
     else:
-        # model = ModifiedPaddleOCR(
         model = PytorchPaddleOCR(
             enable_ov=enable_ov,
             infer_type_det=infer_type_det,
@@ -158,7 +163,6 @@ def ocr_model_init(enable_ov: bool,
             det_db_unclip_ratio=det_db_unclip_ratio,
         )
     return model
-
 
 class AtomModelSingleton:
     _instance = None

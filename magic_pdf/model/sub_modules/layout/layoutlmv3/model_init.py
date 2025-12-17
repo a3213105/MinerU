@@ -130,6 +130,7 @@ class Layoutlmv3_Predictor(object):
         # page_layout_result = {
         #     "layout_dets": []
         # }
+        print(f"Layoutlmv3_Predictor image={image.shape}")
         layout_dets = []
         outputs = self.predictor(image)
         boxes = outputs["instances"].to("cpu")._fields["pred_boxes"].tensor.tolist()

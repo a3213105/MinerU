@@ -129,7 +129,7 @@ class TextClassifier(BaseOCRV20):
             inp = torch.from_numpy(norm_img_batch)
             inp = inp.to(self.device)
             if self.ov_cls is None:
-                if self.infer_type == "BF16":
+                if self.infer_type == "bf16":
                     with torch.no_grad(), torch.amp.autocast('cpu'):
                         prob_out = self.net(inp)
                 else:

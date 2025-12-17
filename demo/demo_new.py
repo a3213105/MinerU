@@ -43,10 +43,10 @@ ds = PymuDocDataset(pdf_bytes)
 if ds.classify() == SupportedPdfParseMethod.OCR:
     # print("### ds.apply(doc_analyze, ocr=True)...")
     # start_time = time.perf_counter()
-    infer_result = ds.apply(doc_analyze, enable_ov=enable_ov, 
-                            enable_bf16_det=enable_bf16_det, 
+    infer_result = ds.apply(doc_analyze, enable_ov=enable_ov,
+                            enable_bf16_det=enable_bf16_det,
                             enable_bf16_rec=enable_bf16_rec,
-                            nstreams = nstreams, 
+                            nstreams = nstreams,
                             ocr=True)
     # end_time = time.perf_counter()
     # print(f"### doc_analyze, ocr=True: {(end_time - start_time) * 1000:.2f} ms")
@@ -61,9 +61,9 @@ if ds.classify() == SupportedPdfParseMethod.OCR:
 else:
     # print("### ds.apply(doc_analyze, ocr=False)...")
     # start_time = time.perf_counter()
-    infer_result = ds.apply(doc_analyze, enable_ov=enable_ov, 
-                            enable_bf16_det=enable_bf16_det, 
-                            enable_bf16_rec=enable_bf16_rec, 
+    infer_result = ds.apply(doc_analyze, enable_ov=enable_ov,
+                            enable_bf16_det=enable_bf16_det,
+                            enable_bf16_rec=enable_bf16_rec,
                             nstreams = nstreams,
                             ocr=False)
     # end_time = time.perf_counter()

@@ -24,6 +24,7 @@ class DocLayoutYOLOModel(object):
             self.model.predictor = (self.model._smart_load("predictor"))(overrides=args)
             self.model.predictor.setup_model(model=self.model.model, verbose=False)
             def infer(*args):
+                # print(f"DocLayoutYOLOModel: args={args[0].shape}")
                 result = self.ov_yolo(args)
                 return torch.from_numpy(result[0])
             self.model.predictor.inference = infer
@@ -59,8 +60,9 @@ class DocLayoutYOLOModel(object):
         images_layout_res = []
         # for index in range(0, len(images), batch_size):
         if self.ov_yolo is None :
-            if self.infer_type == "BF16":
-                for index in tqdm(range(0, len(images), batch_size), desc="Layout_bf16 Predict"):
+            desc_str = f"Layout_{self.infer_type} Predict"
+            if self.infer_type == "bf16":
+                for index in tqdm(range(0, len(images), batch_size), desc=desc_str):
                     with torch.no_grad(), torch.amp.autocast('cpu'):
                         doclayout_yolo_res = [
                             image_res.cpu()
@@ -89,7 +91,7 @@ class DocLayoutYOLOModel(object):
                                 layout_res.append(new_item)
                             images_layout_res.append(layout_res)
             else :
-                for index in tqdm(range(0, len(images), batch_size), desc="Layout Predict"):
+                for index in tqdm(range(0, len(images), batch_size), desc=desc_str):
                     with torch.no_grad():
                         doclayout_yolo_res = [
                             image_res.cpu()
@@ -118,11 +120,8 @@ class DocLayoutYOLOModel(object):
                             layout_res.append(new_item)
                         images_layout_res.append(layout_res)
         else :
-            if self.infer_type == "BF16":
-                desc="Layout_OV_BF16 Predict"
-            else :
-                desc="Layout_OV Predict"
-            for index in tqdm(range(0, len(images), batch_size), desc=desc):
+            desc_str=f"Layout_OV_{self.infer_type} Predict"
+            for index in tqdm(range(0, len(images), batch_size), desc=desc_str):
                 doclayout_yolo_res = [
                     image_res.cpu()
                     for image_res in self.model.predict(

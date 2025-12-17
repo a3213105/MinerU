@@ -26,6 +26,7 @@ class YOLOv8MFDModel(object):
             self.mfd_model.predictor = (self.mfd_model._smart_load("predictor"))(overrides=args)
             self.mfd_model.predictor.setup_model(model=self.mfd_model.model, verbose=False)
             def infer(*args):
+                # print(f"YOLOv8MFDModel: args={args[0].shape}")
                 result = self.ov_yolo(args)
                 return torch.from_numpy(result[0])
             self.mfd_model.predictor.inference = infer
@@ -43,11 +44,8 @@ class YOLOv8MFDModel(object):
     def batch_predict(self, images: list, batch_size: int) -> list:
         images_mfd_res = []
         if self.ov_yolo is not None :
-            if self.infer_type == "BF16":
-                desc = "MFD_OV_bf16 Predict"
-            else :
-                desc = "MFD_OV Predict"
-            for index in tqdm(range(0, len(images), batch_size), desc=desc):
+            desc_str = f"MFD_OV_{self.infer_type} Predict"
+            for index in tqdm(range(0, len(images), batch_size), desc=desc_str):
                 mfd_res = [
                     image_res.cpu()
                     for image_res in self.mfd_model.predict(
@@ -62,7 +60,8 @@ class YOLOv8MFDModel(object):
                 for image_res in mfd_res:
                     images_mfd_res.append(image_res)
         else :
-            for index in tqdm(range(0, len(images), batch_size), desc="MFD Predict"):
+            desc_str = f"MFD_{self.infer_type} Predict"
+            for index in tqdm(range(0, len(images), batch_size), desc=desc_str):
                 mfd_res = [
                     image_res.cpu()
                     for image_res in self.mfd_model.predict(

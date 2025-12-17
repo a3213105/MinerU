@@ -151,10 +151,10 @@ class PymuDocDataset(Dataset):
             from magic_pdf.model.sub_modules.language_detection.utils import \
                 auto_detect_lang
             self._lang = auto_detect_lang(self._data_bits)
-            logger.info(f'PymuDoc lang: {lang}, detect_lang: {self._lang}')
+            # logger.info(f'PymuDoc lang: {lang}, detect_lang: {self._lang}')
         else:
             self._lang = lang
-            logger.info(f'PymuDoc lang: {lang}')
+            # logger.info(f'PymuDoc lang: {lang}')
 
     def __len__(self) -> int:
         """The page number of the pdf."""

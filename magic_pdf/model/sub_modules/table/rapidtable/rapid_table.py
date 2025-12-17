@@ -15,7 +15,7 @@ except ImportError as e:
 
 
 class RapidTableModel(object):
-    def __init__(self, ocr_engine, table_sub_model_name='slanet_plus', 
+    def __init__(self, model_path, ocr_engine, table_sub_model_name='slanet_plus',
                  enable_ov = True, infer_type = True):
         sub_model_list = [model.value for model in ModelType]
         if table_sub_model_name is None:
@@ -25,7 +25,7 @@ class RapidTableModel(object):
                 input_args = RapidTableInput(model_type=table_sub_model_name, use_cuda=True, device=get_device())
             else:
                 root_dir = Path(__file__).absolute().parent.parent.parent.parent.parent
-                slanet_plus_model_path = os.path.join(root_dir, 'resources', 'slanet_plus', 'slanet-plus.onnx')
+                slanet_plus_model_path = os.path.join(model_path, 'slanet_plus', 'slanet-plus.onnx')
                 input_args = RapidTableInput(model_type=table_sub_model_name, model_path=slanet_plus_model_path)
         else:
             raise ValueError(f"Invalid table_sub_model_name: {table_sub_model_name}. It must be one of {sub_model_list}")
@@ -36,10 +36,10 @@ class RapidTableModel(object):
             self.table_model_ov = RapidTableProcesser(slanet_plus_model_path)
             self.table_model_ov.setup_model(stream_num = 1, infer_type=self.infer_type)
             def ov_infer(*args):
-                print(f"args={args}")
-                result = self.table_model_ov(args)
+                # print(f"RapidTableModel args={args[0][0].shape}")
+                result = self.table_model_ov(args[0])
                 return result[0], result[1]
-            self.table_model.table_structure.session = self.table_model_ov
+            self.table_model.table_structure.session = ov_infer
             # print(f"### load table_model_ov model {slanet_plus_model_path}, infer_type={self.infer_type}")
         self.ocr_engine = ocr_engine
 
@@ -50,6 +50,7 @@ class RapidTableModel(object):
         img_height, img_width = bgr_image.shape[:2]
         img_aspect_ratio = img_height / img_width if img_width > 0 else 1.0
         img_is_portrait = img_aspect_ratio > 1.2
+        
         if img_is_portrait:
             det_res = self.ocr_engine.ocr(bgr_image, rec=False)
             det_res = det_res[0]
@@ -91,6 +92,7 @@ class RapidTableModel(object):
             ocr_result = None
 
         if ocr_result:
+            # print(f"RapidTableModel image={image.shape}, ocr_result={len(ocr_result)}")
             table_results = self.table_model(np.asarray(image), ocr_result)
             html_code = table_results.pred_html
             table_cell_bboxes = table_results.cell_bboxes

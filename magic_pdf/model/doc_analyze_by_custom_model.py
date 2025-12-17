@@ -34,11 +34,11 @@ class ModelSingleton:
 
     def get_model(
         self,
-        enable_ov: bool, 
-        Layout_infer_type: str, 
+        enable_ov: bool,
+        Layout_infer_type: str,
         MFD_infer_type: str,
-        MFR_enc_infer_type: str ,
-        MFR_dec_infer_type: str, 
+        MFR_enc_infer_type: str,
+        MFR_dec_infer_type: str,
         OCR_det_infer_type: str,
         OCR_rec_infer_type: str,
         Table_infer_type: str,
@@ -56,10 +56,10 @@ class ModelSingleton:
         if key not in self._models:
             self._models[key] = custom_model_init(
                 enable_ov=enable_ov,
-                Layout_infer_type=Layout_infer_type, 
+                Layout_infer_type=Layout_infer_type,
                 MFD_infer_type=MFD_infer_type,
                 MFR_enc_infer_type=MFR_enc_infer_type,
-                MFR_dec_infer_type=MFR_dec_infer_type, 
+                MFR_dec_infer_type=MFR_dec_infer_type,
                 OCR_det_infer_type=OCR_det_infer_type,
                 OCR_rec_infer_type=OCR_rec_infer_type,
                 Table_infer_type=Table_infer_type,
@@ -78,10 +78,10 @@ class ModelSingleton:
 
 def custom_model_init(
     enable_ov: bool,
-    Layout_infer_type: str, 
+    Layout_infer_type: str,
     MFD_infer_type: str,
-    MFR_enc_infer_type: str ,
-    MFR_dec_infer_type: str, 
+    MFR_enc_infer_type: str,
+    MFR_dec_infer_type: str,
     OCR_det_infer_type: str,
     OCR_rec_infer_type: str,
     Table_infer_type: str,
@@ -132,10 +132,10 @@ def custom_model_init(
 
             model_input = {
                 'enable_ov': enable_ov,
-                'Layout_infer_type': Layout_infer_type, 
+                'Layout_infer_type': Layout_infer_type,
                 'MFD_infer_type': MFD_infer_type,
-                'MFR_enc_infer_type': MFR_enc_infer_type ,
-                'MFR_dec_infer_type': MFR_dec_infer_type, 
+                'MFR_enc_infer_type': MFR_enc_infer_type,
+                'MFR_dec_infer_type': MFR_dec_infer_type,
                 'OCR_det_infer_type': OCR_det_infer_type,
                 'OCR_rec_infer_type': OCR_rec_infer_type,
                 'Table_infer_type': Table_infer_type,
@@ -156,7 +156,7 @@ def custom_model_init(
             logger.error('Not allow model_name!')
             exit(1)
         model_init_cost = time.time() - model_init_start
-        logger.info(f'model init cost: {model_init_cost}')
+        # logger.info(f'model init cost: {model_init_cost}')
     else:
         logger.error('use_inside_model is False, not allow to use inside model')
         exit(1)
@@ -165,16 +165,16 @@ def custom_model_init(
 
 def doc_analyze(
     dataset: Dataset,
-    enable_ov: bool, 
-    Layout_infer_type: str, 
-    MFD_infer_type: str, 
-    MFR_enc_infer_type: str, 
-    MFR_dec_infer_type: str, 
-    OCR_det_infer_type: str, 
+    enable_ov: bool,
+    Layout_infer_type: str,
+    MFD_infer_type: str,
+    MFR_enc_infer_type: str,
+    MFR_dec_infer_type: str,
+    OCR_det_infer_type: str,
     OCR_rec_infer_type: str,
     Table_infer_type: str,
     Lang_infer_type: str,
-    Page_infer_type: str, 
+    Page_infer_type: str,
     nstreams=8,
     ocr: bool = False,
     show_log: bool = False,
@@ -211,7 +211,7 @@ def doc_analyze(
 
     results = []
     for batch_image in batch_images:
-        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type, 
+        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type,
                                          MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
                                          OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type,
                                          Lang_infer_type, Page_infer_type, nstreams,
@@ -277,9 +277,9 @@ def batch_doc_analyze(
     for index, batch_image in enumerate(batch_images):
         processed_images_count += len(batch_image)
         # logger.info(f'Batch {index + 1}/{len(batch_images)}: {processed_images_count} pages/{len(images_with_extra_info)} pages')
-        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type, 
+        result = may_batch_image_analyze(batch_image, enable_ov, Layout_infer_type,
                                          MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
-                                         OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type, 
+                                         OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type,
                                          Lang_infer_type, Page_infer_type, nstreams,
                                          show_log, layout_model, formula_enable, table_enable)
         results.extend(result)
@@ -301,17 +301,17 @@ def batch_doc_analyze(
 
 def may_batch_image_analyze(
         images_with_extra_info: list[(np.ndarray, bool, str)],
-        enable_ov: bool, 
-        Layout_infer_type: str, 
-        MFD_infer_type: str, 
-        MFR_enc_infer_type: str, 
-        MFR_dec_infer_type: str, 
-        OCR_det_infer_type: str, 
+        enable_ov: bool,
+        Layout_infer_type: str,
+        MFD_infer_type: str,
+        MFR_enc_infer_type: str,
+        MFR_dec_infer_type: str,
+        OCR_det_infer_type: str,
         OCR_rec_infer_type: str,
         Table_infer_type: str,
         Lang_infer_type: str,
-        Page_infer_type: str, 
-        nstreams: int, 
+        Page_infer_type: str,
+        nstreams: int,
         ocr: bool,
         show_log: bool = False,
         layout_model=None,
@@ -324,13 +324,8 @@ def may_batch_image_analyze(
     model_manager = ModelSingleton()
 
     # images = [image for image, _, _ in images_with_extra_info]
-    batch_ratio = 1
     device = get_device()
-
-    if str(device).startswith('npu'):
-        import torch_npu
-        if torch_npu.npu.is_available():
-            torch.npu.set_compile_mode(jit_compile=False)
+    batch_ratio = 1
 
     if str(device).startswith('npu') or str(device).startswith('cuda'):
         vram = get_vram(device)
@@ -355,17 +350,143 @@ def may_batch_image_analyze(
 
     # doc_analyze_start = time.time()
        
-    batch_model = BatchAnalyze(model_manager, enable_ov, Layout_infer_type, 
+    batch_model = BatchAnalyze(model_manager, enable_ov, Layout_infer_type,
                                MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
                                OCR_det_infer_type, OCR_rec_infer_type, Table_infer_type,
                                Lang_infer_type, Page_infer_type, nstreams, batch_ratio, show_log,
                                layout_model, formula_enable, table_enable)
     results = batch_model(images_with_extra_info)
-
-    # doc_analyze_time = round(time.time() - doc_analyze_start, 2)
-    # doc_analyze_speed = round(len(images) / doc_analyze_time, 2)
-    # logger.debug(
-    #     f'doc analyze time: {round(time.time() - doc_analyze_start, 2)},'
-    #     f' speed: {doc_analyze_speed} pages/second'
-    # )
     return results
+
+from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
+from magic_pdf.data.dataset import PymuDocDataset
+from magic_pdf.model.batch_analyze import BatchAnalyze
+
+def init_models(
+        enable_ov: bool,
+        Layout_infer_type: str,
+        MFD_infer_type: str,
+        MFR_enc_infer_type: str,
+        MFR_dec_infer_type: str,
+        OCR_det_infer_type: str,
+        OCR_rec_infer_type: str,
+        Table_infer_type: str,
+        Lang_infer_type: str,
+        Page_infer_type: str,
+        nstreams: int,
+        ocr: bool):
+    model_manager = ModelSingleton()
+    batch_model = BatchAnalyze(model_manager=model_manager, enable_ov=enable_ov,
+                               Layout_infer_type=Layout_infer_type, MFD_infer_type=MFD_infer_type,
+                               MFR_enc_infer_type=MFR_enc_infer_type, MFR_dec_infer_type=MFR_dec_infer_type,
+                               OCR_det_infer_type=OCR_det_infer_type, OCR_rec_infer_type=OCR_rec_infer_type,
+                               Table_infer_type=Table_infer_type, Lang_infer_type=Lang_infer_type,
+                               Page_infer_type=Page_infer_type, nstreams=nstreams, batch_ratio=1,
+                               show_log=False, layout_model = None,formula_enable = None, table_enable = None)
+    return batch_model
+
+def may_batch_image_analyze_direct(
+        images_with_extra_info: list[(np.ndarray, bool, str)],
+        batch_model: BatchAnalyze):
+    doc_analyze_start = time.time()
+    results = batch_model(images_with_extra_info)
+    doc_analyze_time = round(time.time() - doc_analyze_start, 2)
+    # pages = len(images_with_extra_info)
+    # print(f'doc analyze time: {doc_analyze_time}, pages={pages}')
+    return results
+
+def doc_analyze_direct(
+    pdf_bytes: bytes,
+    pdf_model: BatchAnalyze,
+    enable_ov: bool,
+    Layout_infer_type: str,
+    MFD_infer_type: str,
+    MFR_enc_infer_type: str,
+    MFR_dec_infer_type: str,
+    OCR_det_infer_type: str,
+    OCR_rec_infer_type: str,
+    Table_infer_type: str,
+    Lang_infer_type: str,
+    Page_infer_type: str,
+    nstreams=8,
+    return_md = False,
+    return_json = False
+):
+    start_page_id = 0
+    end_page_id = None
+    ocr = False
+    # proc
+    ## Create Dataset Instance
+    t0 = time.perf_counter()
+    start_time = t0
+    dataset = PymuDocDataset(pdf_bytes)
+
+    if dataset.classify() == SupportedPdfParseMethod.OCR:
+        ocr=True
+    else :
+        ocr=False
+
+    end_page_id =  len(dataset) - 1
+
+    MIN_BATCH_INFERENCE_SIZE = int(os.environ.get('MINERU_MIN_BATCH_INFERENCE_SIZE', 200))
+    images = []
+    page_wh_list = []
+    for index in range(len(dataset)):
+        if start_page_id <= index <= end_page_id:
+            page_data = dataset.get_page(index)
+            img_dict = page_data.get_image()
+            images.append(img_dict['img'])
+            page_wh_list.append((img_dict['width'], img_dict['height']))
+
+    images_with_extra_info = [(images[index], ocr, dataset._lang) for index in range(len(images))]
+
+    if len(images) >= MIN_BATCH_INFERENCE_SIZE:
+        batch_size = MIN_BATCH_INFERENCE_SIZE
+        batch_images = [images_with_extra_info[i:i+batch_size] for i in range(0, len(images_with_extra_info), batch_size)]
+    else:
+        batch_images = [images_with_extra_info]
+
+    results = []
+    for batch_image in batch_images:
+        result = may_batch_image_analyze_direct(batch_image, pdf_model)
+        results.extend(result)
+
+    model_json = []
+    for index in range(len(dataset)):
+        if start_page_id <= index <= end_page_id:
+            result = results.pop(0)
+            page_width, page_height = page_wh_list.pop(0)
+        else:
+            result = []
+            page_height = 0
+            page_width = 0
+
+        page_info = {'page_no': index, 'width': page_width, 'height': page_height}
+        page_dict = {'layout_dets': result, 'page_info': page_info}
+        model_json.append(page_dict)
+
+    from magic_pdf.operators.models import InferenceResult
+    infer_result = InferenceResult(model_json, dataset)
+
+    ### get model inference result
+    # model_inference_result = infer_result.get_infer_res()
+
+    if ocr :
+        pipe_result = infer_result.pipe_ocr_mode(None)
+    else :
+        pipe_result = infer_result.pipe_txt_mode(None)
+
+    image_dir=""
+    ### get markdown content
+    if return_md:
+        md_content = pipe_result.get_markdown(image_dir)
+    else :
+        md_content = None
+
+    ### get content list content
+    if return_json :
+        content_list_content = pipe_result.get_content_list(image_dir)
+    else :
+        content_list_content = None
+
+    return md_content, content_list_content
