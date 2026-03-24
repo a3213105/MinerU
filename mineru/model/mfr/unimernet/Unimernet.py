@@ -3,7 +3,8 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
 from mineru.utils.boxbase import calculate_iou
-
+import openvino as ov
+from .unimernet_hf import UnimernetModel_ov
 
 class MathDataset(Dataset):
     def __init__(self, image_paths, transform=None):
@@ -19,19 +20,29 @@ class MathDataset(Dataset):
             image = self.transform(raw_image)
             return image
 
-
 class UnimernetModel(object):
-    def __init__(self, weight_dir, _device_="cpu"):
-        from .unimernet_hf import UnimernetModel
-        if _device_.startswith("mps") or _device_.startswith("npu") or _device_.startswith("musa"):
-            self.model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
-        else:
-            self.model = UnimernetModel.from_pretrained(weight_dir)
-        self.device = torch.device(_device_)
-        self.model.to(self.device)
-        if not _device_.startswith("cpu"):
-            self.model = self.model.to(dtype=torch.float16)
-        self.model.eval()
+    def __init__(self, weight_dir, enable_ov, enc_type, dec_type, _device_="cpu"):
+        self.ov_model: UnimernetModel_ov = UnimernetModel_ov(None, weight_dir, enc_type, dec_type)
+        if enable_ov and self.ov_model.using_ov :
+            self.enable_ov = True
+            return 
+        else :
+            self.enable_ov = False
+        self.enc_infer_type = enc_type
+        self.dec_infer_type = dec_type
+
+        if not self.enable_ov :
+            from .unimernet_hf import UnimernetModel
+            if _device_.startswith("mps") or _device_.startswith("npu") or _device_.startswith("musa"):
+                model = UnimernetModel.from_pretrained(weight_dir, attn_implementation="eager")
+            else:
+                model = UnimernetModel.from_pretrained(weight_dir)
+            self.device = torch.device(_device_)
+            model.to(self.device)
+            if not _device_.startswith("cpu"):
+                model = model.to(dtype=torch.float16)
+            model.eval()
+            self.torch_model = model
 
     @staticmethod
     def _filter_boxes_by_iou(xyxy, conf, cla, iou_threshold=0.8):
@@ -103,14 +114,14 @@ class UnimernetModel(object):
             bbox_img = image[ymin:ymax, xmin:xmax]
             mf_image_list.append(bbox_img)
 
-        dataset = MathDataset(mf_image_list, transform=self.model.transform)
+        dataset = MathDataset(mf_image_list, transform=self.torch_model.transform)
         dataloader = DataLoader(dataset, batch_size=32, num_workers=0)
         mfr_res = []
         for mf_img in dataloader:
-            mf_img = mf_img.to(dtype=self.model.dtype)
+            mf_img = mf_img.to(dtype=self.torch_model.dtype)
             mf_img = mf_img.to(self.device)
             with torch.no_grad():
-                output = self.model.generate({"image": mf_img})
+                output = self.torch_model.generate({"image": mf_img})
             mfr_res.extend(output["fixed_str"])
         for res, latex in zip(formula_list, mfr_res):
             res["latex"] = latex
@@ -122,6 +133,7 @@ class UnimernetModel(object):
             images: list,
             batch_size: int = 64,
             interline_enable: bool = True,
+            tqdm_enable: bool = True
     ) -> list:
         images_formula_list = []
         mf_image_list = []
@@ -170,29 +182,34 @@ class UnimernetModel(object):
         # Create mapping for results
         index_mapping = {new_idx: old_idx for new_idx, old_idx in enumerate(sorted_indices)}
 
-        # Create dataset with sorted images
-        dataset = MathDataset(sorted_images, transform=self.model.transform)
 
         # 如果batch_size > len(sorted_images)，则设置为不超过len(sorted_images)的2的幂
         batch_size = min(batch_size, max(1, 2 ** (len(sorted_images).bit_length() - 1))) if sorted_images else 1
-
-        dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
-
         # Process batches and store results
         mfr_res = []
         # for mf_img in dataloader:
 
-        with tqdm(total=len(sorted_images), desc="MFR Predict") as pbar:
-            for index, mf_img in enumerate(dataloader):
-                mf_img = mf_img.to(dtype=self.model.dtype)
-                mf_img = mf_img.to(self.device)
-                with torch.no_grad():
-                    output = self.model.generate({"image": mf_img}, batch_size=batch_size)
-                mfr_res.extend(output["fixed_str"])
+        if self.enable_ov :
+            mfr_res = self.ov_model.inference(sorted_images, batch_size)        
+        else :
+            # Create dataset with sorted images
+            dataset = MathDataset(sorted_images, transform=self.torch_model.transform)
+            dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
+            tqdm_desc = f"MFR Predict with OV_{self.infer_type}" if self.enable_ov else "MFR Predict"
+            with tqdm(total=len(sorted_images), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
+                for index, mf_img in enumerate(dataloader):
+                    mf_img = mf_img.to(dtype=self.torch_model.dtype)
+                    mf_img = mf_img.to(self.device)
+                    with torch.no_grad():
+                        output = self.torch_model.generate({"image": mf_img}, batch_size=batch_size)
+                        if self.ov_model.converted_to_ov:
+                            self.ov_model.convert_ov_model(self.torch_model, mf_img)
 
-                # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
-                current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
-                pbar.update(current_batch_size)
+                    mfr_res.extend(output["fixed_str"])
+
+                    # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
+                    current_batch_size = min(batch_size, len(sorted_images) - index * batch_size)
+                    pbar.update(current_batch_size)
 
         # Restore original order
         unsorted_results = [""] * len(mfr_res)

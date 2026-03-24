@@ -33,7 +33,6 @@ def read_config():
 def get_s3_config(bucket_name: str):
     """~/magic-pdf.json 读出来."""
     config = read_config()
-
     bucket_info = config.get('bucket_info')
     if bucket_name not in bucket_info:
         access_key, secret_key, storage_endpoint = bucket_info['[default]']

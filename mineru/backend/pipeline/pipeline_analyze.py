@@ -29,13 +29,19 @@ class ModelSingleton:
         lang=None,
         formula_enable=None,
         table_enable=None,
+        **kwargs
     ):
+        return custom_model_init(lang=lang,
+                                 formula_enable=formula_enable,
+                                 table_enable=table_enable,
+                                 **kwargs)
         key = (lang, formula_enable, table_enable)
         if key not in self._models:
             self._models[key] = custom_model_init(
                 lang=lang,
                 formula_enable=formula_enable,
                 table_enable=table_enable,
+                **kwargs
             )
         return self._models[key]
 
@@ -44,6 +50,7 @@ def custom_model_init(
     lang=None,
     formula_enable=True,
     table_enable=True,
+    **kwargs
 ):
     model_init_start = time.time()
     # 从配置文件读取model-dir和device
@@ -58,6 +65,7 @@ def custom_model_init(
         'formula_config': formula_config,
         'lang': lang,
     }
+    model_input.update(kwargs)
 
     custom_model = MineruPipelineModel(**model_input)
 
@@ -70,6 +78,10 @@ def custom_model_init(
 def doc_analyze(
         pdf_bytes_list,
         lang_list,
+        enable_ov, Layout_infer_type,
+        MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+        OCR_det_infer_type, OCR_rec_infer_type, wired_table_type,
+        WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
         parse_method: str = 'auto',
         formula_enable=True,
         table_enable=True,
@@ -130,7 +142,11 @@ def doc_analyze(
             f'Batch {index + 1}/{len(batch_images)}: '
             f'{processed_images_count} pages/{len(images_with_extra_info)} pages'
         )
-        batch_results = batch_image_analyze(batch_image, formula_enable, table_enable)
+        batch_results = batch_image_analyze(batch_image, enable_ov, Layout_infer_type,
+        MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+        OCR_det_infer_type, OCR_rec_infer_type, wired_table_type,
+        WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+        formula_enable, table_enable)
         results.extend(batch_results)
     infer_time = round(time.time() - infer_start, 2)
     logger.debug(f"infer finished, cost: {infer_time}, speed: {round(len(results) / infer_time, 3)} page/s")
@@ -155,8 +171,11 @@ def doc_analyze(
 
 def batch_image_analyze(
         images_with_extra_info: List[Tuple[Image.Image, bool, str]],
-        formula_enable=True,
-        table_enable=True):
+        enable_ov: bool, Layout_infer_type: str, MFD_infer_type: str,
+        MFR_enc_infer_type: str, MFR_dec_infer_type: str,
+        OCR_det_infer_type: str, OCR_rec_infer_type: str, wired_table_type: str,
+        WirelessTable_type: str, img_orientation_cls_type: str, table_cls_type, nstreams,
+        formula_enable=True, table_enable=True):
 
     from .batch_analyze import BatchAnalyze
 
@@ -203,7 +222,11 @@ def batch_image_analyze(
     else:
         enable_ocr_det_batch = True
 
-    batch_model = BatchAnalyze(model_manager, batch_ratio, formula_enable, table_enable, enable_ocr_det_batch)
+    batch_model = BatchAnalyze(model_manager, enable_ov, Layout_infer_type,
+        MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+        OCR_det_infer_type, OCR_rec_infer_type, wired_table_type,
+        WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+        batch_ratio, formula_enable, table_enable, enable_ocr_det_batch)
     results = batch_model(images_with_extra_info)
 
     clean_memory(get_device())

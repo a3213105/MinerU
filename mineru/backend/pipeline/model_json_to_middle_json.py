@@ -173,10 +173,13 @@ def page_model_info_to_page_info(page_model_info, image_dict, page, image_writer
     return page_info
 
 
-def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=None, ocr_enable=False, formula_enabled=True):
+def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, 
+                          enable_ov, OCR_det_infer_type, OCR_rec_infer_type, nstreams,
+                          lang=None, ocr_enable=False, formula_enabled=True, tqdm_enable=True):
     middle_json = {"pdf_info": [], "_backend":"pipeline", "_version_name": __version__}
     formula_enabled = get_formula_enable(formula_enabled)
-    for page_index, page_model_info in tqdm(enumerate(model_list), total=len(model_list), desc="Processing pages"):
+    tpdm_desc = f"Processing pages with OV_{OCR_rec_infer_type}" if enable_ov else "Processing pages"
+    for page_index, page_model_info in tqdm(enumerate(model_list), total=len(model_list), desc=tpdm_desc, disable=not tqdm_enable):
         page = pdf_doc[page_index]
         image_dict = images_list[page_index]
         page_info = page_model_info_to_page_info(
@@ -213,7 +216,11 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, lang=N
         ocr_model = atom_model_manager.get_atom_model(
             atom_model_name='ocr',
             det_db_box_thresh=0.3,
-            lang=lang
+            lang=lang,
+            enable_ov = enable_ov,
+            OCR_det_infer_type = OCR_det_infer_type,
+            OCR_rec_infer_type = OCR_rec_infer_type,
+            nstreams = nstreams,
         )
         ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)[0]
         assert len(ocr_res_list) == len(

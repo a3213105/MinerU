@@ -14,14 +14,7 @@ from mineru.utils.engine_utils import get_vlm_engine
 from mineru.utils.enum_class import MakeMode
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_bytes
 from mineru.utils.pdf_image_tools import images_bytes_to_pdf_bytes
-from mineru.backend.vlm.vlm_middle_json_mkcontent import union_make as vlm_union_make
-from mineru.backend.vlm.vlm_analyze import doc_analyze as vlm_doc_analyze
-from mineru.backend.vlm.vlm_analyze import aio_doc_analyze as aio_vlm_doc_analyze
 from mineru.utils.pdf_page_id import get_end_page_id
-
-if os.getenv("MINERU_LMDEPLOY_DEVICE", "") == "maca":
-    import torch
-    torch.backends.cudnn.enabled = False
 
 
 pdf_suffixes = ["pdf"]
@@ -44,7 +37,8 @@ def read_fn(path):
 
 
 def prepare_env(output_dir, pdf_file_name, parse_method):
-    local_md_dir = str(os.path.join(output_dir, pdf_file_name, parse_method))
+    # local_md_dir = str(os.path.join(output_dir, pdf_file_name, parse_method))
+    local_md_dir = str(os.path.join(output_dir, pdf_file_name))
     local_image_dir = os.path.join(str(local_md_dir), "images")
     os.makedirs(local_image_dir, exist_ok=True)
     os.makedirs(local_md_dir, exist_ok=True)

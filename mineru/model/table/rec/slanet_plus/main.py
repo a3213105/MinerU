@@ -34,8 +34,10 @@ class RapidTableOutput:
 
 
 class RapidTable:
-    def __init__(self, config: RapidTableInput):
-        self.table_structure = TableStructurer(asdict(config))
+    def __init__(self, enable_ov, wireless_table_type, config: RapidTableInput):
+        # self.enable_ov = enable_ov
+        # self.infer_type = wireless_table_type
+        self.table_structure = TableStructurer(enable_ov, wireless_table_type, asdict(config))
         self.table_matcher = TableMatch()
 
     def predict(
@@ -147,7 +149,7 @@ def escape_html(input_string):
 
 
 class RapidTableModel(object):
-    def __init__(self, ocr_engine):
+    def __init__(self, enable_ov, wireless_table_type, ocr_engine):
         slanet_plus_model_path = os.path.join(
             auto_download_and_get_model_root_path(ModelPath.slanet_plus),
             ModelPath.slanet_plus,
@@ -155,7 +157,8 @@ class RapidTableModel(object):
         input_args = RapidTableInput(
             model_type="slanet_plus", model_path=slanet_plus_model_path
         )
-        self.table_model = RapidTable(input_args)
+        
+        self.table_model = RapidTable(enable_ov, wireless_table_type, input_args)
         self.ocr_engine = ocr_engine
 
     def predict(self, image, ocr_result=None):
@@ -183,15 +186,14 @@ class RapidTableModel(object):
 
         return None, None, None, None
 
-    def batch_predict(self, table_res_list: List[Dict], batch_size: int = 4) -> None:
+    def batch_predict(self, table_res_list: List[Dict], batch_size: int = 4, tqdm_enable: bool = True) -> None:
         """对传入的字典列表进行批量预测，无返回值"""
-
         not_none_table_res_list = []
         for table_res in table_res_list:
             if table_res.get("ocr_result", None):
                 not_none_table_res_list.append(table_res)
-
-        with tqdm(total=len(not_none_table_res_list), desc="Table-wireless Predict") as pbar:
+        tqdm_desc = f"Table-wireless predict with OV_{self.table_model.table_structure.infer_type}" if self.table_model.table_structure.enable_ov else "Table-wireless predict"
+        with tqdm(total=len(not_none_table_res_list), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for index in range(0, len(not_none_table_res_list), batch_size):
                 batch_imgs = [
                     cv2.cvtColor(np.asarray(not_none_table_res_list[i]["table_img"]), cv2.COLOR_RGB2BGR)

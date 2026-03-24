@@ -181,10 +181,16 @@ class CTCLabelDecode(BaseRecLabelDecode):
                                              use_space_char)
 
     def __call__(self, preds, label=None, return_word_box=False, *args, **kwargs):
-        preds_prob, preds_idx = preds.max(axis=2)
+        if isinstance(preds, np.ndarray):
+            preds_prob = np.max(preds, axis=2)
+            preds_idx  = np.argmax(preds, axis=2)
+        else :
+            preds_prob, preds_idx = preds.max(axis=2)
+            preds_idx = preds_idx.cpu().numpy()
+            preds_prob = preds_prob.float().cpu().numpy()
         text = self.decode(
-            preds_idx.cpu().numpy(),
-            preds_prob.float().cpu().numpy(),
+            preds_idx,
+            preds_prob,
             is_remove_duplicate=True,
             return_word_box=return_word_box,
         )

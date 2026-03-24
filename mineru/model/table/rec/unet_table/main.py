@@ -43,8 +43,8 @@ class WiredTableOutput:
 
 
 class WiredTableRecognition:
-    def __init__(self, config: WiredTableInput, ocr_engine=None):
-        self.table_structure = TSRUnet(asdict(config))
+    def __init__(self, config: WiredTableInput, enable_ov, infer_type, ocr_engine=None):
+        self.table_structure = TSRUnet(enable_ov, infer_type, asdict(config))
         self.load_img = LoadImage()
         self.table_recover = TableRecover()
         self.ocr_engine = ocr_engine
@@ -253,12 +253,11 @@ def count_table_cells_physical(html_code):
     th_count = html_lower.count('<th')
     return td_count + th_count
 
-
 class UnetTableModel:
-    def __init__(self, ocr_engine):
+    def __init__(self, enable_ov, infer_type, ocr_engine):
         model_path = os.path.join(auto_download_and_get_model_root_path(ModelPath.unet_structure), ModelPath.unet_structure)
         wired_input_args = WiredTableInput(model_path=model_path)
-        self.wired_table_model = WiredTableRecognition(wired_input_args, ocr_engine)
+        self.wired_table_model = WiredTableRecognition(wired_input_args, enable_ov, infer_type, ocr_engine)
         self.ocr_engine = ocr_engine
 
     def predict(self, input_img, ocr_result, wireless_html_code):
@@ -280,7 +279,6 @@ class UnetTableModel:
 
         try:
             wired_table_results = self.wired_table_model(np_img, ocr_result)
-
             # viser = VisTable()
             # save_html_path = f"outputs/output.html"
             # save_drawed_path = f"outputs/output_table_vis.jpg"
@@ -346,4 +344,5 @@ class UnetTableModel:
             return html_code
         except Exception as e:
             logger.warning(e)
+            print(f"wireless_html_code={wireless_html_code}")
             return wireless_html_code

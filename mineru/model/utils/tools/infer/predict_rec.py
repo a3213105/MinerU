@@ -10,7 +10,9 @@ from ...pytorchocr.base_ocr_v20 import BaseOCRV20
 from . import pytorchocr_utility as utility
 from ...pytorchocr.postprocess import build_post_process
 from ...pytorchocr.modeling.backbones.rec_hgnet import ConvBNAct
-
+from mineru.model.ov_operator_async import CTCSimpleOCR
+import openvino as ov
+import os
 
 class TextRecognizer(BaseOCRV20):
     def __init__(self, args, **kwargs):
@@ -79,27 +81,50 @@ class TextRecognizer(BaseOCRV20):
         self.weights_path = args.rec_model_path
         self.yaml_path = args.rec_yaml_path
 
-        network_config = utility.get_arch_config(self.weights_path)
-        weights = self.read_pytorch_weights(self.weights_path)
+        self.enable_ov = args.enable_ov
+        self.infer_type = args.OCR_rec_infer_type
+        self.ov_nstreams = args.nstreams
+        self.ov_file_name = f"{args.rec_model_path}.xml"
+        self.ov_net = None
+        if self.enable_ov:
+            try:
+                self.ov_net = CTCSimpleOCR(self.ov_file_name)
+                self.ov_net.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type,
+                                            shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
+            except Exception as e:
+                print(f"### CTCSimpleOCR init failed: {e}")
 
-        self.out_channels = self.get_out_channels(weights)
-        if self.rec_algorithm == 'NRTR':
-            self.out_channels = list(weights.values())[-1].numpy().shape[0]
-        elif self.rec_algorithm == 'SAR':
-            self.out_channels = list(weights.values())[-3].numpy().shape[0]
+        if self.ov_net is None:
 
-        kwargs['out_channels'] = self.out_channels
-        super(TextRecognizer, self).__init__(network_config, **kwargs)
+            network_config = utility.get_arch_config(self.weights_path)
+            weights = self.read_pytorch_weights(self.weights_path)
 
-        self.load_state_dict(weights)
-        self.net.eval()
-        self.net.to(self.device)
-        for module in self.net.modules():
-            if isinstance(module, ConvBNAct):
-                if module.use_act:
-                    torch.quantization.fuse_modules(module, ['conv', 'bn', 'act'], inplace=True)
-                else:
-                    torch.quantization.fuse_modules(module, ['conv', 'bn'], inplace=True)
+            self.out_channels = self.get_out_channels(weights)
+            if self.rec_algorithm == 'NRTR':
+                self.out_channels = list(weights.values())[-1].numpy().shape[0]
+            elif self.rec_algorithm == 'SAR':
+                self.out_channels = list(weights.values())[-3].numpy().shape[0]
+
+            kwargs['out_channels'] = self.out_channels
+            super(TextRecognizer, self).__init__(network_config, **kwargs)
+
+            self.load_state_dict(weights)
+            self.net.eval()
+            self.net.to(self.device)
+            if not os.path.isfile(self.ov_file_name):
+                try:
+                    ov_model = ov.convert_model(self.net, example_input=torch.randn(1, 3, 48, 320))
+                    ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
+                    print(f"export ov model to {self.ov_file_name} ")
+                except Exception as e:
+                    print(f"### convert_model failed: {e}, try simple convert_model")
+
+            for module in self.net.modules():
+                if isinstance(module, ConvBNAct):
+                    if module.use_act:
+                        torch.quantization.fuse_modules(module, ['conv', 'bn', 'act'], inplace=True)
+                    else:
+                        torch.quantization.fuse_modules(module, ['conv', 'bn'], inplace=True)
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape
@@ -141,6 +166,57 @@ class TextRecognizer(BaseOCRV20):
         resized_image = cv2.resize(img, (resized_w, imgH)) /127.5 - 1
         padding_im = np.zeros((imgC, imgH, imgW), dtype=np.float32)
         padding_im[:, :, 0:resized_w] = resized_image.transpose((2, 0, 1))
+        return padding_im
+
+    def resize_norm_img_ov(self, img, max_wh_ratio):
+        imgC, imgH, imgW = self.rec_image_shape
+        if self.rec_algorithm == 'NRTR' or self.rec_algorithm == 'ViTSTR':
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # return padding_im
+            image_pil = Image.fromarray(np.uint8(img))
+            if self.rec_algorithm == 'ViTSTR':
+                img = image_pil.resize([imgW, imgH], Image.BICUBIC)
+            else:
+                img = image_pil.resize([imgW, imgH], Image.ANTIALIAS)
+            img = np.array(img)
+            norm_img = np.expand_dims(img, -1)
+            norm_img = norm_img.transpose((2, 0, 1))
+            if self.rec_algorithm == 'ViTSTR':
+                norm_img = norm_img.astype(np.float32) / 255.
+            else:
+                norm_img = norm_img.astype(np.float32) / 128. - 1.
+            return norm_img
+        elif self.rec_algorithm == 'RFL':
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            resized_image = cv2.resize(
+                img, (imgW, imgH), interpolation=cv2.INTER_CUBIC)
+            resized_image = resized_image.astype('float32')
+            resized_image = resized_image / 255
+            resized_image = resized_image[np.newaxis, :]
+            resized_image -= 0.5
+            resized_image /= 0.5
+            return resized_image
+
+        assert imgC == img.shape[2]
+        max_wh_ratio =  max(max_wh_ratio, imgW / imgH)
+        imgW = int((imgH * max_wh_ratio))
+        imgW = max(min(imgW, self.limited_max_width), self.limited_min_width)
+        h, w = img.shape[:2]
+        ratio = w / float(h)
+        ratio_imgH = math.ceil(imgH * ratio)
+        ratio_imgH = max(ratio_imgH, self.limited_min_width)
+        if ratio_imgH > imgW:
+            resized_w = imgW
+        else:
+            resized_w = int(ratio_imgH)
+        resized_image = cv2.resize(img, (resized_w, imgH))
+        # resized_image = resized_image.astype('float32')
+        # resized_image = resized_image.transpose((2, 0, 1)) / 255
+        # resized_image -= 0.5
+        # resized_image /= 0.5
+        # padding_im = np.zeros((imgC, imgH, imgW), dtype=np.float32)
+        padding_im = np.full((imgH, imgW, imgC), 127, dtype=np.uint8)
+        padding_im[:, 0:resized_w, :] = resized_image
         return padding_im
 
     def resize_norm_img_svtr(self, img, image_shape):
@@ -287,7 +363,7 @@ class TextRecognizer(BaseOCRV20):
 
         return img
 
-    def __call__(self, img_list, tqdm_enable=False, tqdm_desc="OCR-rec Predict"):
+    def __base_call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
         width_list = []
@@ -435,3 +511,82 @@ class TextRecognizer(BaseOCRV20):
                 rec_res[i] = (text, 0.0)
 
         return rec_res, elapse
+
+    def __ov_call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
+        img_num = len(img_list)
+
+        # rec_res = []
+        rec_res = [['', 0.0]] * img_num
+        elapse = 0
+
+        starttime = time.time()
+        norm_img_batch = []
+        encoder_word_pos_list = []
+        gsrm_word_pos_list = []
+        gsrm_slf_attn_bias1_list = []
+        gsrm_slf_attn_bias2_list = []
+        valid_ratios = []
+        norm_img_mask_batch = []
+        word_label_list = []
+        for norm_img in img_list:
+            if self.rec_algorithm == "SRN":
+                norm_img = self.process_image_srn(norm_img,
+                                                  self.rec_image_shape, 8, self.max_text_length)
+                encoder_word_pos_list.append(norm_img[1])
+                gsrm_word_pos_list.append(norm_img[2])
+                gsrm_slf_attn_bias1_list.append(norm_img[3])
+                gsrm_slf_attn_bias2_list.append(norm_img[4])
+                norm_img_batch.append(norm_img[0])
+            elif self.rec_algorithm == "SAR":
+                norm_img, _, _, valid_ratio = self.resize_norm_img_sar(norm_img,
+                                                self.rec_image_shape)
+                norm_img = norm_img[np.newaxis, :]
+                valid_ratio = np.expand_dims(valid_ratio, axis=0)
+                valid_ratios.append(valid_ratio)
+                norm_img_batch.append(norm_img)
+            elif self.rec_algorithm == "CAN":
+                norm_img = self.norm_img_can(norm_img, img.shape[1] / float(img.shape[0]))
+                norm_img = norm_img[np.newaxis, :]
+                norm_img_batch.append(norm_img)
+                norm_image_mask = np.ones(norm_img.shape, dtype='float32')
+                word_label = np.ones([1, 36], dtype='int64')
+                norm_img_mask_batch.append(norm_image_mask)
+                word_label_list.append(word_label)
+            elif self.rec_algorithm == "SVTR":
+                norm_img = self.resize_norm_img_svtr(norm_img, self.rec_image_shape)
+                norm_img = norm_img[np.newaxis, :]
+                norm_img_batch.append(norm_img)
+            else:
+                h, w = norm_img.shape[0:2]
+                wh_ratio = w * 1.0 / h
+                norm_img = self.resize_norm_img_ov(norm_img, wh_ratio)
+                norm_img = norm_img[np.newaxis, :]
+                norm_img_batch.append(norm_img)
+        tqdm_desc = f"OCR-rec ({self.rec_algorithm}) predict with OV_{self.infer_type}"
+        if self.rec_algorithm == "SRN":
+            with tqdm(total=img_num, desc=tqdm_desc, disable=not tqdm_enable) as pbar:
+                preds = self.ov_net({norm_img_batch, encoder_word_pos_inp, gsrm_word_pos_inp, gsrm_slf_attn_bias1_inp, gsrm_slf_attn_bias2_inp})
+                pbar.update(img_num)
+        else:
+            with tqdm(total=img_num, desc=tqdm_desc, disable=not tqdm_enable) as pbar:
+                preds = self.ov_net(norm_img_batch)
+                pbar.update(img_num)
+        with torch.no_grad():
+            for i, it in enumerate(preds):
+                res = self.postprocess_op(it[0])
+                rec_res[i] = res[0]
+        elapse = time.time() - starttime
+
+        # Fix NaN values in recognition results
+        for i in range(len(rec_res)):
+            text, score = rec_res[i]
+            if isinstance(score, float) and math.isnan(score):
+                rec_res[i] = (text, 0.0)
+
+        return rec_res, elapse
+
+    def __call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
+        if self.ov_net is not None:
+            return self.__ov_call__(img_list, tqdm_enable, f"{tqdm_desc} ({self.rec_algorithm}) with OV_{self.infer_type}")
+        else:
+            return self.__base_call__(img_list, tqdm_enable, f"{tqdm_desc} ({self.rec_algorithm})")

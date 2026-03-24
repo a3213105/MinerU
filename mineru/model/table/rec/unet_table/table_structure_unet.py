@@ -20,20 +20,31 @@ from.utils_table_recover import (
     box_4_2_poly_to_box_4_1,
 )
 
+from mineru.model.ov_operator_async import OnnxSessProcessor
 
 class TSRUnet:
-    def __init__(self, config: Dict):
+    def __init__(self, enable_ov, infer_type, config: Dict):
         self.K = 1000
         self.MK = 4000
         self.mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
         self.std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
         self.inp_height = 1024
         self.inp_width = 1024
+        self.session = None
+        self.ov_session = None
+        self.enable_ov = enable_ov
+        self.infer_type = infer_type
 
-        config["intra_op_num_threads"] = get_op_num_threads("MINERU_INTRA_OP_NUM_THREADS")
-        config["inter_op_num_threads"] = get_op_num_threads("MINERU_INTER_OP_NUM_THREADS")
+        if self.enable_ov:
+            self.ov_session = OnnxSessProcessor(config["model_path"], "TSRUnet")
+            self.ov_session.setup_model(1, infer_type)
+        
+        if self.ov_session is None:
+            self.enable_ov = False
+            config["intra_op_num_threads"] = get_op_num_threads("MINERU_INTRA_OP_NUM_THREADS")
+            config["inter_op_num_threads"] = get_op_num_threads("MINERU_INTER_OP_NUM_THREADS")
 
-        self.session = OrtInferSession(config)
+            self.session = OrtInferSession(config)
 
     def __call__(
         self, img: np.ndarray, **kwargs
@@ -76,8 +87,11 @@ class TSRUnet:
         return {"img": images}
 
     def infer(self, input):
-        result = self.session(input["img"][None, ...])[0][0]
-        result = result[0].astype(np.uint8)
+        if self.enable_ov:
+            result = self.ov_session(input["img"])[0][0][0]
+        else:
+            result = self.session(input["img"][None, ...])[0][0]
+            result = result[0].astype(np.uint8)
         return result
 
     def postprocess(self, img, pred, **kwargs):
@@ -112,7 +126,7 @@ class TSRUnet:
 
         hpred = cv2.resize(hpred, (ori_shape[1], ori_shape[0]))
         vpred = cv2.resize(vpred, (ori_shape[1], ori_shape[0]))
-
+        
         h, w = pred.shape
         hors_k = int(math.sqrt(w) * 1.2)
         vert_k = int(math.sqrt(h) * 1.2)

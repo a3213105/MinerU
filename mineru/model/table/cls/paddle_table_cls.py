@@ -10,13 +10,24 @@ from tqdm import tqdm
 from mineru.backend.pipeline.model_list import AtomicModel
 from mineru.utils.enum_class import ModelPath
 from mineru.utils.models_download_utils import auto_download_and_get_model_root_path
-
+from mineru.model.ov_operator_async import OnnxSessProcessor
 
 class PaddleTableClsModel:
-    def __init__(self):
-        self.sess = onnxruntime.InferenceSession(
-            os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_table_cls), ModelPath.paddle_table_cls)
-        )
+    def __init__(self, enable_ov, infer_type):
+        self.sess = None
+        model_path = os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_table_cls), ModelPath.paddle_table_cls)
+        self.enable_ov = enable_ov
+        self.infer_type = infer_type
+        if self.enable_ov:
+            try:
+                self.sess = OnnxSessProcessor(model_path, "PaddleTableClsModel")
+                self.sess.setup_model(stream_num = 1, infer_type=self.infer_type)
+            except Exception as e:
+                print(f"### PaddleTableClsModel ov model failed, {e}")
+                self.sess = None
+        if self.sess is None:
+            self.enable_ov = False
+            self.sess = onnxruntime.InferenceSession(model_path)
         self.less_length = 256
         self.cw, self.ch = 224, 224
         self.std = [0.229, 0.224, 0.225]
@@ -130,11 +141,13 @@ class PaddleTableClsModel:
             res_imgs.append(img)
         x = np.stack(res_imgs, axis=0).astype(dtype=np.float32, copy=False)
         return x
-    def batch_predict(self, img_info_list, batch_size=16):
+
+    def batch_predict(self, img_info_list, batch_size=16, tqdm_enable=True):
         imgs = [item["wired_table_img"] for item in img_info_list]
         imgs = self.list_2_batch(imgs, batch_size=batch_size)
         label_res = []
-        with tqdm(total=len(img_info_list), desc="Table-wired/wireless cls predict", disable=True) as pbar:
+        tqdm_desc = f"Table-cls predict with OV_{self.infer_type}" if self.enable_ov else "Table-cls predict"
+        with tqdm(total=len(img_info_list), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for img_batch in imgs:
                 x = self.batch_preprocess(img_batch)
                 result = self.sess.run(None, {"x": x})

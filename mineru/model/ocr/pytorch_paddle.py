@@ -191,7 +191,7 @@ class PytorchPaddleOCR(TextSystem):
             det=True,
             rec=True,
             mfd_res=None,
-            tqdm_enable=False,
+            tqdm_enable=True,
             tqdm_desc="OCR-rec Predict",
             ):
         assert isinstance(img, (np.ndarray, list, str, bytes))
@@ -243,7 +243,7 @@ class PytorchPaddleOCR(TextSystem):
                 return ocr_res
 
     def __call__(self, img, mfd_res=None):
-
+        print(f"### Running OCR with PytorchPaddleOCR, input image shape: {img.shape}, dtype: {img.dtype}")
         if img is None:
             logger.debug("no valid image provided")
             return None, None

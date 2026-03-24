@@ -7,7 +7,9 @@ from ...pytorchocr.base_ocr_v20 import BaseOCRV20
 from . import pytorchocr_utility as utility
 from ...pytorchocr.data import create_operators, transform
 from ...pytorchocr.postprocess import build_post_process
-
+import os
+from mineru.model.ov_operator_async import PaddleTextDetector
+import openvino as ov
 
 class TextDetector(BaseOCRV20):
     def __init__(self, args, **kwargs):
@@ -109,16 +111,36 @@ class TextDetector(BaseOCRV20):
         self.preprocess_op = create_operators(pre_process_list)
         self.postprocess_op = build_post_process(postprocess_params)
 
-        self.weights_path = args.det_model_path
-        self.yaml_path = args.det_yaml_path
-        network_config = utility.get_arch_config(self.weights_path)
-        super(TextDetector, self).__init__(network_config, **kwargs)
-        self.load_pytorch_weights(self.weights_path)
-        self.net.eval()
-        self.net.to(self.device)
-        for module in self.net.modules():
-            if hasattr(module, 'rep'):
-                module.rep()
+        self.enable_ov = args.enable_ov
+        self.infer_type = args.OCR_det_infer_type
+        self.ov_file_name = f"{args.det_model_path}.xml"
+        self.ov_net = None
+        if self.enable_ov:
+            try:
+                self.ov_net = PaddleTextDetector(self.ov_file_name)
+                self.ov_net.setup_model(1, self.infer_type)
+            except Exception as e:
+                print(f"### PaddleTextDetector setup failed: {e}")
+        if self.ov_net is None:
+            self.weights_path = args.det_model_path
+            self.yaml_path = args.det_yaml_path
+            network_config = utility.get_arch_config(self.weights_path)
+            super(TextDetector, self).__init__(network_config, **kwargs)
+            self.load_pytorch_weights(self.weights_path)
+            self.net.eval()
+            self.net.to(self.device)
+
+            if not os.path.isfile(self.ov_file_name):
+                try:
+                    ov_model = ov.convert_model(self.net, example_input=torch.randn(1, 3, 960, 960))
+                    ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
+                    print(f"export ov model to {self.ov_file_name} ")
+                except Exception as e:
+                    print(f"### convert_model failed: {e}, try simple convert_model")
+                    
+            for module in self.net.modules():
+                if hasattr(module, 'rep'):
+                    module.rep()
 
     def _batch_process_same_size(self, img_list):
         """
@@ -165,10 +187,13 @@ class TextDetector(BaseOCRV20):
             return batch_results, time.time() - starttime
 
         # 批处理推理
-        with torch.no_grad():
-            inp = torch.from_numpy(batch_tensor)
-            inp = inp.to(self.device)
-            outputs = self.net(inp)
+        if self.ov_net is not None:
+            outputs = self.ov_net(batch_tensor)
+        else :
+            with torch.no_grad():
+                inp = torch.from_numpy(batch_tensor)
+                inp = inp.to(self.device)
+                outputs = self.net(inp)
 
         # 处理输出
         preds = {}
@@ -307,27 +332,46 @@ class TextDetector(BaseOCRV20):
         img = img.copy()
         starttime = time.time()
 
-        with torch.no_grad():
-            inp = torch.from_numpy(img)
-            inp = inp.to(self.device)
-            outputs = self.net(inp)
-
         preds = {}
-        if self.det_algorithm == "EAST":
-            preds['f_geo'] = outputs['f_geo'].cpu().numpy()
-            preds['f_score'] = outputs['f_score'].cpu().numpy()
-        elif self.det_algorithm == 'SAST':
-            preds['f_border'] = outputs['f_border'].cpu().numpy()
-            preds['f_score'] = outputs['f_score'].cpu().numpy()
-            preds['f_tco'] = outputs['f_tco'].cpu().numpy()
-            preds['f_tvo'] = outputs['f_tvo'].cpu().numpy()
-        elif self.det_algorithm in ['DB', 'PSE', 'DB++']:
-            preds['maps'] = outputs['maps'].cpu().numpy()
-        elif self.det_algorithm == 'FCE':
-            for i, (k, output) in enumerate(outputs.items()):
-                preds['level_{}'.format(i)] = output
-        else:
-            raise NotImplementedError
+
+        if self.ov_net is not None:
+            outputs = self.ov_net([img])
+            if self.det_algorithm == "EAST":
+                preds['f_geo'] = outputs[0]
+                preds['f_score'] = outputs[1]
+            elif self.det_algorithm == 'SAST':
+                preds['f_border'] = outputs[0]
+                preds['f_score'] = outputs[1]
+                preds['f_tco'] = outputs[2]
+                preds['f_tvo'] = outputs[3]
+            elif self.det_algorithm in ['DB', 'PSE', 'DB++']:
+                preds['maps'] = np.expand_dims(outputs[0], axis=0)
+            elif self.det_algorithm == 'FCE':
+                for i, (k, output) in enumerate(outputs.items()):
+                    preds['level_{}'.format(i)] = output
+            else:
+                raise NotImplementedError
+        else :
+            with torch.no_grad():
+                inp = torch.from_numpy(img)
+                inp = inp.to(self.device)
+                outputs = self.net(inp)
+
+            if self.det_algorithm == "EAST":
+                preds['f_geo'] = outputs['f_geo'].cpu().numpy()
+                preds['f_score'] = outputs['f_score'].cpu().numpy()
+            elif self.det_algorithm == 'SAST':
+                preds['f_border'] = outputs['f_border'].cpu().numpy()
+                preds['f_score'] = outputs['f_score'].cpu().numpy()
+                preds['f_tco'] = outputs['f_tco'].cpu().numpy()
+                preds['f_tvo'] = outputs['f_tvo'].cpu().numpy()
+            elif self.det_algorithm in ['DB', 'PSE', 'DB++']:
+                preds['maps'] = outputs['maps'].cpu().numpy()
+            elif self.det_algorithm == 'FCE':
+                for i, (k, output) in enumerate(outputs.items()):
+                    preds['level_{}'.format(i)] = output
+            else:
+                raise NotImplementedError
 
         post_result = self.postprocess_op(preds, shape_list)
         dt_boxes = post_result[0]['points']

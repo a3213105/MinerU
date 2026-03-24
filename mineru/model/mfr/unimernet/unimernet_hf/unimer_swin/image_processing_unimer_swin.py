@@ -79,11 +79,11 @@ class UnimerSwinImageProcessor(BaseImageProcessor):
 
         # Handle numpy array
         elif isinstance(img, np.ndarray):
-            try:
-                img = self.crop_margin_numpy(img)
-            except Exception:
-                # might throw an error for broken files
-                return None
+            #try:
+            #   img = self.crop_margin_numpy(img)
+            #except Exception:
+            #    # might throw an error for broken files
+            #    return None
 
             if img.shape[0] == 0 or img.shape[1] == 0:
                 return None

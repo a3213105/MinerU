@@ -28,93 +28,96 @@ else:
     MFR_MODEL = "unimernet_small"
 
 
-def img_orientation_cls_model_init():
+def img_orientation_cls_model_init(enable_ov, img_orientation_cls_type,
+                                   OCR_det_infer_type, OCR_rec_infer_type, nstreams):
     atom_model_manager = AtomModelSingleton()
     ocr_engine = atom_model_manager.get_atom_model(
         atom_model_name=AtomicModel.OCR,
         det_db_box_thresh=0.5,
         det_db_unclip_ratio=1.6,
         lang="ch_lite",
-        enable_merge_det_boxes=False
+        enable_merge_det_boxes=False,
+        enable_ov=enable_ov,
+        OCR_det_infer_type=OCR_det_infer_type,
+        OCR_rec_infer_type=OCR_rec_infer_type,
+        nstreams=nstreams,
     )
-    cls_model = PaddleOrientationClsModel(ocr_engine)
+    cls_model = PaddleOrientationClsModel(enable_ov, img_orientation_cls_type, ocr_engine)
     return cls_model
 
 
-def table_cls_model_init():
-    return PaddleTableClsModel()
+def table_cls_model_init(enable_ov, table_cls_type):
+    return PaddleTableClsModel(enable_ov, table_cls_type)
 
 
-def wired_table_model_init(lang=None):
+def wired_table_model_init(enable_ov, wired_table_type, OCR_det_infer_type, OCR_rec_infer_type, nstreams, lang=None):
     atom_model_manager = AtomModelSingleton()
     ocr_engine = atom_model_manager.get_atom_model(
         atom_model_name=AtomicModel.OCR,
         det_db_box_thresh=0.5,
         det_db_unclip_ratio=1.6,
         lang=lang,
-        enable_merge_det_boxes=False
+        enable_merge_det_boxes=False,
+        enable_ov=enable_ov,
+        OCR_det_infer_type=OCR_det_infer_type,
+        OCR_rec_infer_type=OCR_rec_infer_type,
+        nstreams=nstreams,
     )
-    table_model = UnetTableModel(ocr_engine)
+    table_model = UnetTableModel(enable_ov, wired_table_type, ocr_engine)
     return table_model
 
 
-def wireless_table_model_init(lang=None):
+def wireless_table_model_init(enable_ov, wireless_table_type, OCR_det_infer_type,
+                              OCR_rec_infer_type, nstreams, lang=None):
     atom_model_manager = AtomModelSingleton()
     ocr_engine = atom_model_manager.get_atom_model(
         atom_model_name=AtomicModel.OCR,
         det_db_box_thresh=0.5,
         det_db_unclip_ratio=1.6,
         lang=lang,
-        enable_merge_det_boxes=False
+        enable_merge_det_boxes=False,
+        enable_ov=enable_ov,
+        OCR_det_infer_type=OCR_det_infer_type,
+        OCR_rec_infer_type=OCR_rec_infer_type,
+        nstreams=nstreams,
     )
-    table_model = RapidTableModel(ocr_engine)
+    table_model = RapidTableModel(enable_ov, wireless_table_type, ocr_engine)
     return table_model
 
 
-def mfd_model_init(weight, device='cpu'):
+def mfd_model_init(weight, enable_ov, infer_type, device='cpu'):
     if str(device).startswith('npu'):
         device = torch.device(device)
-    mfd_model = YOLOv8MFDModel(weight, device)
+    mfd_model = YOLOv8MFDModel(weight, enable_ov, infer_type, device)
     return mfd_model
 
 
-def mfr_model_init(weight_dir, device='cpu'):
+def mfr_model_init(weight_dir, enable_ov, enc_infer_type, dec_infer_type, device='cpu'):
     if MFR_MODEL == "unimernet_small":
-        mfr_model = UnimernetModel(weight_dir, device)
+        mfr_model = UnimernetModel(weight_dir, enable_ov, enc_infer_type, dec_infer_type, device)
     elif MFR_MODEL == "pp_formulanet_plus_m":
-        mfr_model = FormulaRecognizer(weight_dir, device)
+        mfr_model = FormulaRecognizer(weight_dir, enable_ov, enc_infer_type, device)
     else:
         logger.error('MFR model name not allow')
         exit(1)
     return mfr_model
 
 
-def doclayout_yolo_model_init(weight, device='cpu'):
+def doclayout_yolo_model_init(weight, enable_ov, infer_type, device='cpu'):
     if str(device).startswith('npu'):
         device = torch.device(device)
-    model = DocLayoutYOLOModel(weight, device)
+    model = DocLayoutYOLOModel(weight, enable_ov, infer_type, device)
     return model
 
-def ocr_model_init(det_db_box_thresh=0.3,
-                   lang=None,
-                   det_db_unclip_ratio=1.8,
-                   enable_merge_det_boxes=True
-                   ):
+def ocr_model_init(enable_ov, OCR_det_infer_type, OCR_rec_infer_type, nstreams,
+                   det_db_box_thresh=0.3, lang=None, det_db_unclip_ratio=1.8,
+                   enable_merge_det_boxes=True):
     if lang is not None and lang != '':
-        model = PytorchPaddleOCR(
-            det_db_box_thresh=det_db_box_thresh,
-            lang=lang,
-            use_dilation=True,
-            det_db_unclip_ratio=det_db_unclip_ratio,
-            enable_merge_det_boxes=enable_merge_det_boxes,
-        )
+        model = PytorchPaddleOCR(enable_ov=enable_ov, OCR_det_infer_type=OCR_det_infer_type, OCR_rec_infer_type=OCR_rec_infer_type, nstreams=nstreams,
+                                 det_db_box_thresh=det_db_box_thresh, lang=lang, use_dilation=True, det_db_unclip_ratio=det_db_unclip_ratio, enable_merge_det_boxes=enable_merge_det_boxes,)
     else:
-        model = PytorchPaddleOCR(
-            det_db_box_thresh=det_db_box_thresh,
-            use_dilation=True,
-            det_db_unclip_ratio=det_db_unclip_ratio,
-            enable_merge_det_boxes=enable_merge_det_boxes,
-        )
+        model = PytorchPaddleOCR(enable_ov=enable_ov, OCR_det_infer_type=OCR_det_infer_type, OCR_rec_infer_type=OCR_rec_infer_type, nstreams=nstreams,
+                                 det_db_box_thresh=det_db_box_thresh, use_dilation=True, det_db_unclip_ratio=det_db_unclip_ratio, enable_merge_det_boxes=enable_merge_det_boxes,)
     return model
 
 
@@ -128,6 +131,7 @@ class AtomModelSingleton:
         return cls._instance
 
     def get_atom_model(self, atom_model_name: str, **kwargs):
+        return atom_model_init(model_name=atom_model_name, **kwargs)
 
         lang = kwargs.get('lang', None)
 
@@ -142,7 +146,7 @@ class AtomModelSingleton:
                 kwargs.get('det_db_box_thresh', 0.3),
                 lang,
                 kwargs.get('det_db_unclip_ratio', 1.8),
-                kwargs.get('enable_merge_det_boxes', True)
+                kwargs.get('enable_merge_det_boxes', True),
             )
         else:
             key = atom_model_name
@@ -156,20 +160,31 @@ def atom_model_init(model_name: str, **kwargs):
     if model_name == AtomicModel.Layout:
         atom_model = doclayout_yolo_model_init(
             kwargs.get('doclayout_yolo_weights'),
+            kwargs.get('enable_ov'),
+            kwargs.get('Layout_infer_type'),
             kwargs.get('device')
         )
     elif model_name == AtomicModel.MFD:
         atom_model = mfd_model_init(
             kwargs.get('mfd_weights'),
+            kwargs.get('enable_ov'),
+            kwargs.get('MFD_infer_type'),
             kwargs.get('device')
         )
     elif model_name == AtomicModel.MFR:
         atom_model = mfr_model_init(
             kwargs.get('mfr_weight_dir'),
+            kwargs.get('enable_ov'),
+            kwargs.get('MFR_enc_infer_type'),
+            kwargs.get('MFR_dec_infer_type'),
             kwargs.get('device')
         )
     elif model_name == AtomicModel.OCR:
         atom_model = ocr_model_init(
+            kwargs.get('enable_ov'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
+            kwargs.get('nstreams'),
             kwargs.get('det_db_box_thresh', 0.3),
             kwargs.get('lang'),
             kwargs.get('det_db_unclip_ratio', 1.8),
@@ -177,16 +192,34 @@ def atom_model_init(model_name: str, **kwargs):
         )
     elif model_name == AtomicModel.WirelessTable:
         atom_model = wireless_table_model_init(
+            kwargs.get('enable_ov'),
+            kwargs.get('WirelessTable_type'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
+            kwargs.get('nstreams'),
             kwargs.get('lang'),
         )
     elif model_name == AtomicModel.WiredTable:
         atom_model = wired_table_model_init(
+            kwargs.get('enable_ov'),
+            kwargs.get('wired_table_type'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
+            kwargs.get('nstreams'),
             kwargs.get('lang'),
         )
     elif model_name == AtomicModel.TableCls:
-        atom_model = table_cls_model_init()
+        atom_model = table_cls_model_init(
+            kwargs.get('enable_ov'),
+            kwargs.get('table_cls_type'))
     elif model_name == AtomicModel.ImgOrientationCls:
-        atom_model = img_orientation_cls_model_init()
+        atom_model = img_orientation_cls_model_init(
+            kwargs.get('enable_ov'),
+            kwargs.get('img_orientation_cls_type'),
+            kwargs.get('OCR_det_infer_type'),
+            kwargs.get('OCR_rec_infer_type'),
+            kwargs.get('nstreams'),
+            )
     else:
         logger.error('model name not allow')
         exit(1)
@@ -206,6 +239,18 @@ class MineruPipelineModel:
         self.apply_table = self.table_config.get('enable', True)
         self.lang = kwargs.get('lang', None)
         self.device = kwargs.get('device', 'cpu')
+        self.enable_ov = kwargs.get('enable_ov', True)
+        self.Layout_infer_type = kwargs.get('Layout_infer_type', 'bf16')
+        self.MFD_infer_type = kwargs.get('MFD_infer_type', 'bf16')
+        self.MFR_enc_infer_type = kwargs.get('MFR_enc_infer_type', 'bf16')
+        self.MFR_dec_infer_type = kwargs.get('MFR_dec_infer_type', 'bf16')
+        self.OCR_det_infer_type = kwargs.get('OCR_det_infer_type', 'bf16')
+        self.OCR_rec_infer_type = kwargs.get('OCR_rec_infer_type', 'bf16')
+        self.wired_table_type = kwargs.get('wired_table_type', 'bf16')
+        self.WirelessTable_type = kwargs.get('WirelessTable_type', 'bf16')
+        self.img_orientation_cls_type = kwargs.get('img_orientation_cls_type', 'bf16')
+        self.table_cls_type = kwargs.get('table_cls_type', 'bf16')
+        self.nstreams = kwargs.get('nstreams', 1)
         logger.info(
             'DocAnalysis init, this may take some times......'
         )
@@ -218,6 +263,8 @@ class MineruPipelineModel:
                 mfd_weights=str(
                     os.path.join(auto_download_and_get_model_root_path(ModelPath.yolo_v8_mfd), ModelPath.yolo_v8_mfd)
                 ),
+                enable_ov = self.enable_ov,
+                MFD_infer_type = self.MFD_infer_type,
                 device=self.device,
             )
 
@@ -233,6 +280,9 @@ class MineruPipelineModel:
             self.mfr_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.MFR,
                 mfr_weight_dir=str(os.path.join(auto_download_and_get_model_root_path(mfr_model_path), mfr_model_path)),
+                enable_ov = self.enable_ov,
+                MFR_enc_infer_type = self.MFR_enc_infer_type,
+                MFR_dec_infer_type = self.MFR_dec_infer_type,
                 device=self.device,
             )
 
@@ -242,131 +292,56 @@ class MineruPipelineModel:
             doclayout_yolo_weights=str(
                 os.path.join(auto_download_and_get_model_root_path(ModelPath.doclayout_yolo), ModelPath.doclayout_yolo)
             ),
+            enable_ov = self.enable_ov,
+            Layout_infer_type = self.Layout_infer_type,
             device=self.device,
         )
         # 初始化ocr
         self.ocr_model = atom_model_manager.get_atom_model(
             atom_model_name=AtomicModel.OCR,
             det_db_box_thresh=0.3,
-            lang=self.lang
+            lang=self.lang,
+            enable_ov = self.enable_ov,
+            OCR_det_infer_type = self.OCR_det_infer_type,
+            OCR_rec_infer_type = self.OCR_rec_infer_type,
+            nstreams = self.nstreams,
         )
         # init table model
         if self.apply_table:
             self.wired_table_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.WiredTable,
                 lang=self.lang,
+                enable_ov = self.enable_ov,
+                wired_table_type = self.wired_table_type,
+                OCR_det_infer_type = self.OCR_det_infer_type,
+                OCR_rec_infer_type = self.OCR_rec_infer_type,
+                nstreams = self.nstreams,
             )
             self.wireless_table_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.WirelessTable,
                 lang=self.lang,
+                enable_ov = self.enable_ov,
+                WirelessTable_type = self.WirelessTable_type,
+                OCR_det_infer_type = self.OCR_det_infer_type,
+                OCR_rec_infer_type = self.OCR_rec_infer_type,
+                nstreams = self.nstreams,
             )
             self.table_cls_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.TableCls,
+                enable_ov = self.enable_ov,
+                table_cls_type = self.table_cls_type,
+                OCR_det_infer_type = self.OCR_det_infer_type,
+                OCR_rec_infer_type = self.OCR_rec_infer_type,
+                nstreams = self.nstreams,
             )
             self.img_orientation_cls_model = atom_model_manager.get_atom_model(
                 atom_model_name=AtomicModel.ImgOrientationCls,
                 lang=self.lang,
+                enable_ov = self.enable_ov,
+                img_orientation_cls_type = self.img_orientation_cls_type,
+                OCR_det_infer_type = self.OCR_det_infer_type,
+                OCR_rec_infer_type = self.OCR_rec_infer_type,
+                nstreams = self.nstreams,
             )
 
         logger.info('DocAnalysis init done!')
-
-
-class HybridModelSingleton:
-    _instance = None
-    _models = {}
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def get_model(
-        self,
-        lang=None,
-        formula_enable=None,
-    ):
-        key = (lang, formula_enable)
-        if key not in self._models:
-            self._models[key] = MineruHybridModel(
-                lang=lang,
-                formula_enable=formula_enable,
-            )
-        return self._models[key]
-
-def ocr_det_batch_setting(device):
-    # 检测torch的版本号
-    import torch
-    from packaging import version
-
-    device_type = os.getenv("MINERU_LMDEPLOY_DEVICE", "")
-
-    if (
-            version.parse(torch.__version__) >= version.parse("2.8.0")
-            or str(device).startswith('mps')
-            or device_type.lower() in ["corex"]
-    ):
-        enable_ocr_det_batch = False
-    else:
-        enable_ocr_det_batch = True
-    return enable_ocr_det_batch
-
-class MineruHybridModel:
-    def __init__(
-            self,
-            device=None,
-            lang=None,
-            formula_enable=True,
-    ):
-        if device is not None:
-            self.device = device
-        else:
-            self.device = get_device()
-
-        self.lang = lang
-
-        self.enable_ocr_det_batch = ocr_det_batch_setting(self.device)
-
-        if str(self.device).startswith('npu'):
-            try:
-                import torch_npu
-                if torch_npu.npu.is_available():
-                    torch_npu.npu.set_compile_mode(jit_compile=False)
-            except Exception as e:
-                raise RuntimeError(
-                    "NPU is selected as device, but torch_npu is not available. "
-                    "Please ensure that the torch_npu package is installed correctly."
-                ) from e
-
-        self.atom_model_manager = AtomModelSingleton()
-
-        # 初始化OCR模型
-        self.ocr_model = self.atom_model_manager.get_atom_model(
-            atom_model_name=AtomicModel.OCR,
-            det_db_box_thresh=0.3,
-            lang=self.lang
-        )
-
-        if formula_enable:
-            # 初始化公式检测模型
-            self.mfd_model = self.atom_model_manager.get_atom_model(
-                atom_model_name=AtomicModel.MFD,
-                mfd_weights=str(
-                    os.path.join(auto_download_and_get_model_root_path(ModelPath.yolo_v8_mfd), ModelPath.yolo_v8_mfd)
-                ),
-                device=self.device,
-            )
-
-            # 初始化公式解析模型
-            if MFR_MODEL == "unimernet_small":
-                mfr_model_path = ModelPath.unimernet_small
-            elif MFR_MODEL == "pp_formulanet_plus_m":
-                mfr_model_path = ModelPath.pp_formulanet_plus_m
-            else:
-                logger.error('MFR model name not allow')
-                exit(1)
-
-            self.mfr_model = self.atom_model_manager.get_atom_model(
-                atom_model_name=AtomicModel.MFR,
-                mfr_weight_dir=str(os.path.join(auto_download_and_get_model_root_path(mfr_model_path), mfr_model_path)),
-                device=self.device,
-            )

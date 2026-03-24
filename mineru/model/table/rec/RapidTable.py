@@ -26,8 +26,10 @@ class CustomRapidTable(RapidTable):
         import logging
         # 通过环境变量控制日志级别
         logging.disable(logging.INFO)
+        print(f"### RapidTable initialized with : {cfg}")
         super().__init__(cfg)
-    def __call__(self, img_contents, ocr_results=None, batch_size=1):
+
+    def __call__(self, img_contents, ocr_results=None, batch_size=1, tqdm_enable=True):
         if not isinstance(img_contents, list):
             img_contents = [img_contents]
 
@@ -36,8 +38,8 @@ class CustomRapidTable(RapidTable):
         results = RapidTableOutput()
 
         total_nums = len(img_contents)
-
-        with tqdm(total=total_nums, desc="Table-wireless Predict") as pbar:
+        tqdm_desc = f"RapidTable predict with OV_{self.infer_type}" if self.enable_ov else "RapidTable predict"
+        with tqdm(total=total_nums, desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for start_i in range(0, total_nums, batch_size):
                 end_i = min(total_nums, start_i + batch_size)
 
@@ -61,7 +63,7 @@ class CustomRapidTable(RapidTable):
 
 
 class RapidTableModel():
-    def __init__(self, ocr_engine):
+    def __init__(self, enable_ov, infer_type, ocr_engine):
         slanet_plus_model_path = os.path.join(
             auto_download_and_get_model_root_path(ModelPath.slanet_plus),
             ModelPath.slanet_plus,
@@ -146,7 +148,7 @@ if __name__ == '__main__':
             det_db_unclip_ratio=1.6,
             enable_merge_det_boxes=False,
     )
-    table_model = RapidTableModel(ocr_engine)
+    table_model = RapidTableModel(enable_ov, wireless_table_type, ocr_engine)
     img_path = Path(r"D:\project\20240729ocrtest\pythonProject\images\601c939cc6dabaf07af763e2f935f54896d0251f37cc47beb7fc6b069353455d.jpg")
     image = cv2.imread(str(img_path))
     html_code, table_cell_bboxes, logic_points, elapse = table_model.predict(image)

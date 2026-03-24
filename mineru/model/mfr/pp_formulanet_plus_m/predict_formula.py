@@ -14,12 +14,15 @@ from .processors import (
     ToBatch,
     UniMERNetDecode,
 )
-
+import openvino as ov
+from mineru.model.ov_operator_async import OnnxSessProcessor
 
 class FormulaRecognizer(BaseOCRV20):
     def __init__(
         self,
         weight_dir,
+        enable_ov,
+        infer_type,
         device="cpu",
     ):
         self.weights_path = os.path.join(
@@ -39,17 +42,37 @@ class FormulaRecognizer(BaseOCRV20):
             "PP-FormulaNet_plus-M_inference.yml",
         )
 
-        network_config = pytorchocr_utility.AnalysisConfig(
-            self.weights_path, self.yaml_path
-        )
-        weights = self.read_pytorch_weights(self.weights_path)
+        self.enable_ov = enable_ov
+        self.infer_type = infer_type
+        self.ov_file_name = f"{weight_dir}/PP-FormulaNet_plus-M.xml"
 
-        super(FormulaRecognizer, self).__init__(network_config)
+        if self.enable_ov:
+            try:
+                self.ov_net = OnnxSessProcessor(self.ov_file_name)
+                self.ov_net.setup_model(stream_num = 1, infer_type=self.infer_type)
+            except Exception as e:
+                print(f"### CTCSimpleOCR init failed: {e}")
+        else :
+            network_config = pytorchocr_utility.AnalysisConfig(
+                self.weights_path, self.yaml_path
+            )
+            weights = self.read_pytorch_weights(self.weights_path)
 
-        self.load_state_dict(weights)
-        self.device = torch.device(device) if isinstance(device, str) else device
-        self.net.to(self.device)
-        self.net.eval()
+            super(FormulaRecognizer, self).__init__(network_config)
+
+            self.load_state_dict(weights)
+            self.device = torch.device(device) if isinstance(device, str) else device
+            self.net.to(self.device)
+            self.net.eval()
+            
+            if not os.path.isfile(self.ov_file_name):
+                try:
+                    ov_model = ov.convert_model(self.net)
+                    ov.save_model(ov_model, self.ov_file_name, compress_to_fp16=False)
+                    print(f"export ov model to {self.ov_file_name} ")
+                except Exception as e:
+                    print(f"### convert_model failed: {e}, try simple convert_model")
+
 
         with open(self.infer_yaml_path, "r", encoding="utf-8") as yaml_file:
             data = yaml.load(yaml_file, Loader=yaml.FullLoader)
@@ -65,7 +88,7 @@ class FormulaRecognizer(BaseOCRV20):
             character_list=data["PostProcess"]["character_dict"]
         )
 
-    def predict(self, img_list, batch_size: int = 64):
+    def predict(self, img_list, batch_size: int = 64, tqdm_enable: bool = True):
         # Reduce batch size by 50% to avoid potential memory issues during inference.
         batch_size = int(0.5 * batch_size)
         batch_imgs = self.pre_tfs["UniMERNetImgDecode"](imgs=img_list)
@@ -76,7 +99,8 @@ class FormulaRecognizer(BaseOCRV20):
         inp = inp.to(self.device)
         rec_formula = []
         with torch.no_grad():
-            with tqdm(total=len(inp), desc="MFR Predict") as pbar:
+            tqdm_desc = f"MFR Predict with OV_{self.infer_type}" if self.enable_ov else "MFR Predict"
+            with tqdm(total=len(inp), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
                 for index in range(0, len(inp), batch_size):
                     batch_data = inp[index: index + batch_size]
                     # with torch.amp.autocast(device_type=self.device.type):

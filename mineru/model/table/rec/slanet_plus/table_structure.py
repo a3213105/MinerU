@@ -15,7 +15,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-
+import json
 from mineru.utils.os_env_config import get_op_num_threads
 from .table_structure_utils import (
     OrtInferSession,
@@ -23,19 +23,37 @@ from .table_structure_utils import (
     TablePreprocess,
     BatchTablePreprocess,
 )
-
+from mineru.model.ov_operator_async import OnnxSessProcessor
 
 class TableStructurer:
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, enable_ov, wireless_table_type, config: Dict[str, Any]):
         self.preprocess_op = TablePreprocess()
         self.batch_preprocess_op = BatchTablePreprocess()
-
-        config["intra_op_num_threads"] = get_op_num_threads("MINERU_INTRA_OP_NUM_THREADS")
-        config["inter_op_num_threads"] = get_op_num_threads("MINERU_INTER_OP_NUM_THREADS")
-
-        self.session = OrtInferSession(config)
-
-        self.character = self.session.get_metadata()
+        self.enable_ov = enable_ov
+        self.infer_type = wireless_table_type
+        self.session = None
+        json_path = config["model_path"] + ".json"
+        if self.enable_ov:
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    self.character = json.load(f)
+                self.table_model_ov = OnnxSessProcessor(config["model_path"], "TableStructurer")
+                self.table_model_ov.setup_model(stream_num = 1, infer_type=self.infer_type)
+                def ov_infer(*args):
+                    result = self.table_model_ov(args[0])
+                    return result[0], result[1]
+                self.session = ov_infer
+                # self.character = ['<thead>', '</thead>', '<tbody>', '</tbody>', '<tr>', '</tr>', '<td', '>', '</td>', ' colspan="2"', ' colspan="3"', ' colspan="4"', ' colspan="5"', ' colspan="6"', ' colspan="7"', ' colspan="8"', ' colspan="9"', ' colspan="10"', ' colspan="11"', ' colspan="12"', ' colspan="13"', ' colspan="14"', ' colspan="15"', ' colspan="16"', ' colspan="17"', ' colspan="18"', ' colspan="19"', ' colspan="20"', ' rowspan="2"', ' rowspan="3"', ' rowspan="4"', ' rowspan="5"', ' rowspan="6"', ' rowspan="7"', ' rowspan="8"', ' rowspan="9"', ' rowspan="10"', ' rowspan="11"', ' rowspan="12"', ' rowspan="13"', ' rowspan="14"', ' rowspan="15"', ' rowspan="16"', ' rowspan="17"', ' rowspan="18"', ' rowspan="19"', ' rowspan="20"', '<td></td>']
+            except Exception as e:
+                print(f"### TableStructurer ov model failed, {e}")
+                self.session = None
+        if self.session is None:
+            config["intra_op_num_threads"] = get_op_num_threads("MINERU_INTRA_OP_NUM_THREADS")
+            config["inter_op_num_threads"] = get_op_num_threads("MINERU_INTER_OP_NUM_THREADS")
+            self.session = OrtInferSession(config)
+            self.character = self.session.get_metadata()
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(self.character, f, ensure_ascii=False, indent=2)
         self.postprocess_op = TableLabelDecode(self.character)
 
     def process(self, img):

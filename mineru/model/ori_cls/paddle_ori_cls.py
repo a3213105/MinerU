@@ -11,13 +11,24 @@ import onnxruntime
 
 from mineru.utils.enum_class import ModelPath
 from mineru.utils.models_download_utils import auto_download_and_get_model_root_path
-
+from mineru.model.ov_operator_async import OnnxSessProcessor
 
 class PaddleOrientationClsModel:
-    def __init__(self, ocr_engine):
-        self.sess = onnxruntime.InferenceSession(
-            os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_orientation_classification), ModelPath.paddle_orientation_classification)
-        )
+    def __init__(self, enable_ov, infer_type, ocr_engine):
+        self.sess = None
+        model_path = os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_orientation_classification), ModelPath.paddle_orientation_classification)
+        self.enable_ov = enable_ov
+        self.infer_type = infer_type
+        if self.enable_ov:
+            try :
+                self.sess = OnnxSessProcessor(model_path, "PaddleOrientationClsModel")
+                self.sess.setup_model(1, self.infer_type)
+            except Exception as e:
+                print(f"Failed to initialize OpenVINO model, falling back to ONNX. Error: {e}")
+                self.sess = None
+        if self.sess is None:
+            self.enable_ov = False
+            self.sess = onnxruntime.InferenceSession(model_path)
         self.ocr_engine = ocr_engine
         self.less_length = 256
         self.cw, self.ch = 224, 224
@@ -172,7 +183,7 @@ class PaddleOrientationClsModel:
         return x
 
     def batch_predict(
-        self, imgs: List[Dict], det_batch_size: int, batch_size: int = 16
+        self, imgs: List[Dict], det_batch_size: int, batch_size: int = 16, tqdm_enable: bool = True
     ) -> None:
 
         import torch
@@ -201,7 +212,8 @@ class PaddleOrientationClsModel:
 
         # 对每个分辨率组进行批处理
         rotated_imgs = []
-        for group_key, group_imgs in tqdm(resolution_groups.items(), desc="Table-ori cls stage1 predict", disable=True):
+        tpdm_desc = f"Table-ori stage1 Predict with OV_{self.infer_type}" if self.enable_ov else "Table-ori stage1 Predict"
+        for group_key, group_imgs in tqdm(resolution_groups.items(), desc=tpdm_desc, disable=not tqdm_enable):
             # 计算目标尺寸（组内最大尺寸，向上取整到RESOLUTION_GROUP_STRIDE的倍数）
             max_h = max(img["table_img_bgr"].shape[0] for img in group_imgs)
             max_w = max(img["table_img_bgr"].shape[1] for img in group_imgs)
@@ -249,7 +261,8 @@ class PaddleOrientationClsModel:
         # 对旋转的图片进行旋转角度预测
         if len(rotated_imgs) > 0:
             imgs = self.list_2_batch(rotated_imgs, batch_size=batch_size)
-            with tqdm(total=len(rotated_imgs), desc="Table-ori cls stage2 predict", disable=True) as pbar:
+            tqdm_desc = f"Table-ori stage2 predict with OV_{self.infer_type}" if self.enable_ov else "Table-ori cls stage2 predict"
+            with tqdm(total=len(rotated_imgs), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
                 for img_batch in imgs:
                     x = self.batch_preprocess(img_batch)
                     results = self.sess.run(None, {"x": x})
