@@ -11,7 +11,6 @@ from loguru import logger
 from mineru.cli.common import convert_pdf_bytes_to_bytes_by_pypdfium2, prepare_env, read_fn
 from mineru.data.data_reader_writer import FileBasedDataWriter
 from mineru.utils.draw_bbox import draw_layout_bbox, draw_span_bbox
-from mineru.utils.engine_utils import get_vlm_engine
 from mineru.utils.enum_class import MakeMode
 from mineru.backend.pipeline.pipeline_analyze import doc_analyze as pipeline_doc_analyze
 from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as pipeline_union_make
@@ -235,16 +234,16 @@ if __name__ == '__main__':
     # os.environ['MINERU_MODEL_SOURCE'] = "modelscope"
 
     enable_ov = True
-    Layout_infer_type = "f32"
-    MFD_infer_type = "f32"
-    MFR_enc_infer_type = "f32"
-    MFR_dec_infer_type = "f32"
-    OCR_det_infer_type = "f32"
-    OCR_rec_infer_type = "f32"
-    wired_table_type = "f32"
-    WirelessTable_type = "f32"
-    img_orientation_cls_type = "f32"
-    table_cls_type = "f32"
+    Layout_infer_type = "bf16"
+    MFD_infer_type = "bf16"
+    MFR_enc_infer_type = "bf16"
+    MFR_dec_infer_type = "bf16"
+    OCR_det_infer_type = "bf16"
+    OCR_rec_infer_type = "bf16"
+    wired_table_type = "bf16"
+    WirelessTable_type = "bf16"
+    img_orientation_cls_type = "bf16"
+    table_cls_type = "bf16"
     nstreams = 8
     """Use hybrid mode and local computing power to parse documents"""
     parse_doc(doc_path_list, output_dir, enable_ov, Layout_infer_type,

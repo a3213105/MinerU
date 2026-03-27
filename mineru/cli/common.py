@@ -8,6 +8,7 @@ from pathlib import Path
 from loguru import logger
 import pypdfium2 as pdfium
 
+from mineru.backend.pipeline.model_init import AtomModelSingleton
 from mineru.data.data_reader_writer import FileBasedDataWriter
 from mineru.utils.draw_bbox import draw_layout_bbox, draw_span_bbox, draw_line_sort_bbox
 from mineru.utils.engine_utils import get_vlm_engine
@@ -100,11 +101,11 @@ def _process_output(
         f_dump_middle_json,
         f_dump_model_output,
         f_make_md_mode,
+        f_draw_line_sort_bbox,
         middle_json,
         model_output=None,
         is_pipeline=True
 ):
-    f_draw_line_sort_bbox = False
     from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make as pipeline_union_make
     """处理输出文件"""
     if f_draw_layout_bbox:
@@ -125,7 +126,7 @@ def _process_output(
     image_dir = str(os.path.basename(local_image_dir))
 
     if f_dump_md:
-        make_func = pipeline_union_make if is_pipeline else vlm_union_make
+        make_func = pipeline_union_make
         md_content_str = make_func(pdf_info, f_make_md_mode, image_dir)
         md_writer.write_string(
             f"{pdf_file_name}.md",
@@ -133,7 +134,7 @@ def _process_output(
         )
 
     if f_dump_content_list:
-        make_func = pipeline_union_make if is_pipeline else vlm_union_make
+        make_func = pipeline_union_make
         content_list = make_func(pdf_info, MakeMode.CONTENT_LIST, image_dir)
         md_writer.write_string(
             f"{pdf_file_name}_content_list.json",
@@ -162,11 +163,24 @@ def _process_output(
     logger.info(f"local output dir is {local_md_dir}")
 
 
-def _process_pipeline(
+def _process_pipeline_cache(
         output_dir,
         pdf_file_names,
         pdf_bytes_list,
         p_lang_list,
+        enable_cache,
+        enable_ov,
+        Layout_infer_type,
+        MFD_infer_type,
+        MFR_enc_infer_type,
+        MFR_dec_infer_type,
+        OCR_det_infer_type,
+        OCR_rec_infer_type,
+        wired_table_type,
+        WirelessTable_type,
+        img_orientation_cls_type,
+        table_cls_type,
+        nstreams,
         parse_method,
         p_formula_enable,
         p_table_enable,
@@ -178,16 +192,27 @@ def _process_pipeline(
         f_dump_orig_pdf,
         f_dump_content_list,
         f_make_md_mode,
+        f_draw_line_sort_bbox,
 ):
     """处理pipeline后端逻辑"""
     from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json as pipeline_result_to_middle_json
-    from mineru.backend.pipeline.pipeline_analyze import doc_analyze as pipeline_doc_analyze
+    from mineru.backend.pipeline.pipeline_analyze import ModelSingleton, get_batch_info, doc_analyze as pipeline_doc_analyze
+    from mineru.backend.pipeline.batch_analyze import BatchAnalyze
+
+    batch_ratio, enable_ocr_det_batch = get_batch_info()
+    model_manager = ModelSingleton()
+
+    batch_model = BatchAnalyze(model_manager, enable_cache, enable_ov, Layout_infer_type,
+        MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+        OCR_det_infer_type, OCR_rec_infer_type, wired_table_type,
+        WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+        batch_ratio, p_formula_enable, p_table_enable, enable_ocr_det_batch)
 
     infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled_list = (
-        pipeline_doc_analyze(
-            pdf_bytes_list, p_lang_list, parse_method=parse_method,
-            formula_enable=p_formula_enable, table_enable=p_table_enable
-        )
+        pipeline_doc_analyze(batch_model, pdf_bytes_list, p_lang_list, enable_cache, enable_ov, Layout_infer_type, MFD_infer_type,
+                             MFR_enc_infer_type, MFR_dec_infer_type, OCR_det_infer_type, OCR_rec_infer_type,
+                             wired_table_type, WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+                             parse_method=parse_method, formula_enable=p_formula_enable, table_enable=p_table_enable)
     )
 
     for idx, model_list in enumerate(infer_results):
@@ -201,21 +226,139 @@ def _process_pipeline(
         _lang = lang_list[idx]
         _ocr_enable = ocr_enabled_list[idx]
 
-        middle_json = pipeline_result_to_middle_json(
-            model_list, images_list, pdf_doc, image_writer,
-            _lang, _ocr_enable, p_formula_enable
-        )
+        middle_json = pipeline_result_to_middle_json(model_list, images_list, pdf_doc, image_writer,
+                                                     enable_cache, enable_ov, OCR_det_infer_type, OCR_rec_infer_type,
+                                                     nstreams, _lang, _ocr_enable, p_formula_enable)
 
         pdf_info = middle_json["pdf_info"]
         pdf_bytes = pdf_bytes_list[idx]
 
-        _process_output(
-            pdf_info, pdf_bytes, pdf_file_name, local_md_dir, local_image_dir,
-            md_writer, f_draw_layout_bbox, f_draw_span_bbox, f_dump_orig_pdf,
-            f_dump_md, f_dump_content_list, f_dump_middle_json, f_dump_model_output,
-            f_make_md_mode, middle_json, model_json, is_pipeline=True
+        _process_output(pdf_info, pdf_bytes, pdf_file_name, local_md_dir, local_image_dir,
+                        md_writer, f_draw_layout_bbox, f_draw_span_bbox, f_dump_orig_pdf,
+                        f_dump_md, f_dump_content_list, f_dump_middle_json, f_dump_model_output,
+                        f_make_md_mode, f_draw_line_sort_bbox, middle_json, model_json, is_pipeline=True)
+
+
+def _process_pipeline_nocache(
+        output_dir,
+        pdf_file_names,
+        pdf_bytes_list,
+        p_lang_list,
+        enable_cache,
+        enable_ov,
+        Layout_infer_type,
+        MFD_infer_type,
+        MFR_enc_infer_type,
+        MFR_dec_infer_type,
+        OCR_det_infer_type,
+        OCR_rec_infer_type,
+        wired_table_type,
+        WirelessTable_type,
+        img_orientation_cls_type,
+        table_cls_type,
+        nstreams,
+        parse_method,
+        p_formula_enable,
+        p_table_enable,
+        f_draw_layout_bbox,
+        f_draw_span_bbox,
+        f_dump_md,
+        f_dump_middle_json,
+        f_dump_model_output,
+        f_dump_orig_pdf,
+        f_dump_content_list,
+        f_make_md_mode,
+        f_draw_line_sort_bbox,
+):
+    """处理pipeline后端逻辑"""
+    from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json as pipeline_result_to_middle_json
+    from mineru.backend.pipeline.pipeline_analyze import ModelSingleton, get_batch_info, doc_analyze_1by1 as pipeline_doc_analyze
+    from mineru.backend.pipeline.batch_analyze import BatchAnalyze
+
+    batch_ratio, enable_ocr_det_batch = get_batch_info()
+    model_manager = ModelSingleton()
+
+    batch_model = BatchAnalyze(model_manager, enable_cache, enable_ov, Layout_infer_type,
+        MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+        OCR_det_infer_type, OCR_rec_infer_type, wired_table_type,
+        WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+        batch_ratio, p_formula_enable, p_table_enable, enable_ocr_det_batch)
+
+    for pdf_bytes, p_lang, pdf_file_name in zip(pdf_bytes_list, p_lang_list, pdf_file_names):
+        model_list, images_list, pdf_doc, _lang, _ocr_enable = (
+            pipeline_doc_analyze(batch_model, pdf_bytes, p_lang, enable_cache, enable_ov, Layout_infer_type, MFD_infer_type,
+                                MFR_enc_infer_type, MFR_dec_infer_type, OCR_det_infer_type, OCR_rec_infer_type,
+                                wired_table_type, WirelessTable_type, img_orientation_cls_type, table_cls_type, nstreams,
+                                parse_method=parse_method, formula_enable=p_formula_enable, table_enable=p_table_enable)
         )
 
+        model_manager.clear_cache()
+        atom_model_manager = AtomModelSingleton()
+        atom_model_manager.clear_cache()
+
+        model_json = copy.deepcopy(model_list)
+        local_image_dir, local_md_dir = prepare_env(output_dir, pdf_file_name, parse_method)
+        image_writer, md_writer = FileBasedDataWriter(local_image_dir), FileBasedDataWriter(local_md_dir)
+
+        middle_json = pipeline_result_to_middle_json(model_list, images_list, pdf_doc, image_writer,
+                                                        enable_cache, enable_ov, OCR_det_infer_type, OCR_rec_infer_type,
+                                                        nstreams, _lang, _ocr_enable, p_formula_enable)
+        del pdf_doc
+        del model_list
+        images_list.clear()  # 及时清理图片数据，释放内存
+        pdf_info = middle_json["pdf_info"]
+        pdf_bytes = pdf_bytes
+
+        _process_output(pdf_info, pdf_bytes, pdf_file_name, local_md_dir, local_image_dir,
+                        md_writer, f_draw_layout_bbox, f_draw_span_bbox, f_dump_orig_pdf,
+                        f_dump_md, f_dump_content_list, f_dump_middle_json, f_dump_model_output,
+                        f_make_md_mode, f_draw_line_sort_bbox, middle_json, model_json, is_pipeline=True)
+
+def _process_pipeline(
+        output_dir,
+        pdf_file_names,
+        pdf_bytes_list,
+        p_lang_list,
+        enable_cache,
+        enable_ov,
+        Layout_infer_type,
+        MFD_infer_type,
+        MFR_enc_infer_type,
+        MFR_dec_infer_type,
+        OCR_det_infer_type,
+        OCR_rec_infer_type,
+        wired_table_type,
+        WirelessTable_type,
+        img_orientation_cls_type,
+        table_cls_type,
+        nstreams,
+        parse_method,
+        p_formula_enable,
+        p_table_enable,
+        f_draw_layout_bbox,
+        f_draw_span_bbox,
+        f_dump_md,
+        f_dump_middle_json,
+        f_dump_model_output,
+        f_dump_orig_pdf,
+        f_dump_content_list,
+        f_make_md_mode,
+        f_draw_line_sort_bbox,
+):
+    if enable_cache:
+        _process_pipeline_cache(output_dir, pdf_file_names, pdf_bytes_list, p_lang_list, enable_cache, enable_ov,
+                    Layout_infer_type, MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type, OCR_det_infer_type,
+                    OCR_rec_infer_type, wired_table_type, WirelessTable_type, img_orientation_cls_type, table_cls_type,
+                    nstreams, parse_method, p_formula_enable, p_table_enable, f_draw_layout_bbox, f_draw_span_bbox,
+                    f_dump_md, f_dump_middle_json, f_dump_model_output, f_dump_orig_pdf, f_dump_content_list,
+                    f_make_md_mode, f_draw_line_sort_bbox,)
+    else :
+        _process_pipeline_nocache(output_dir, pdf_file_names, pdf_bytes_list, p_lang_list, enable_cache, enable_ov,
+                    Layout_infer_type, MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type, OCR_det_infer_type,
+                    OCR_rec_infer_type, wired_table_type, WirelessTable_type, img_orientation_cls_type, table_cls_type,
+                    nstreams, parse_method, p_formula_enable, p_table_enable, f_draw_layout_bbox, f_draw_span_bbox,
+                    f_dump_md, f_dump_middle_json, f_dump_model_output, f_dump_orig_pdf, f_dump_content_list,
+                    f_make_md_mode, f_draw_line_sort_bbox,)
 
 async def _async_process_vlm(
         output_dir,
@@ -410,6 +553,19 @@ def do_parse(
         pdf_file_names: list[str],
         pdf_bytes_list: list[bytes],
         p_lang_list: list[str],
+        enable_cache,
+        enable_ov,
+        Layout_infer_type,
+        MFD_infer_type,
+        MFR_enc_infer_type,
+        MFR_dec_infer_type,
+        OCR_det_infer_type,
+        OCR_rec_infer_type,
+        wired_table_type,
+        WirelessTable_type,
+        img_orientation_cls_type,
+        table_cls_type,
+        nstreams,
         backend="pipeline",
         parse_method="auto",
         formula_enable=True,
@@ -423,6 +579,7 @@ def do_parse(
         f_dump_orig_pdf=True,
         f_dump_content_list=True,
         f_make_md_mode=MakeMode.MM_MD,
+        f_draw_line_sort_bbox=True,
         start_page_id=0,
         end_page_id=None,
         **kwargs,
@@ -431,12 +588,13 @@ def do_parse(
     pdf_bytes_list = _prepare_pdf_bytes(pdf_bytes_list, start_page_id, end_page_id)
 
     if backend == "pipeline":
-        _process_pipeline(
-            output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
-            parse_method, formula_enable, table_enable,
-            f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
-            f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
-        )
+        _process_pipeline(output_dir, pdf_file_names, pdf_bytes_list, p_lang_list, enable_cache, enable_ov,
+                          Layout_infer_type, MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+                          OCR_det_infer_type, OCR_rec_infer_type, wired_table_type, WirelessTable_type,
+                          img_orientation_cls_type, table_cls_type, nstreams, parse_method, formula_enable,
+                          table_enable, f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
+                          f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode,
+                          f_draw_line_sort_bbox)
     else:
         if backend.startswith("vlm-"):
             backend = backend[4:]
@@ -482,6 +640,19 @@ async def aio_do_parse(
         pdf_file_names: list[str],
         pdf_bytes_list: list[bytes],
         p_lang_list: list[str],
+        enable_cache,
+        enable_ov,
+        Layout_infer_type,
+        MFD_infer_type,
+        MFR_enc_infer_type,
+        MFR_dec_infer_type,
+        OCR_det_infer_type,
+        OCR_rec_infer_type,
+        wired_table_type,
+        WirelessTable_type,
+        img_orientation_cls_type,
+        table_cls_type,
+        nstreams,
         backend="pipeline",
         parse_method="auto",
         formula_enable=True,
@@ -495,6 +666,7 @@ async def aio_do_parse(
         f_dump_orig_pdf=True,
         f_dump_content_list=True,
         f_make_md_mode=MakeMode.MM_MD,
+        f_draw_line_sort_bbox=True,
         start_page_id=0,
         end_page_id=None,
         **kwargs,
@@ -504,12 +676,13 @@ async def aio_do_parse(
 
     if backend == "pipeline":
         # pipeline模式暂不支持异步，使用同步处理方式
-        _process_pipeline(
-            output_dir, pdf_file_names, pdf_bytes_list, p_lang_list,
-            parse_method, formula_enable, table_enable,
-            f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
-            f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode
-        )
+        _process_pipeline(output_dir, pdf_file_names, pdf_bytes_list, p_lang_list, enable_cache, enable_ov,
+                          Layout_infer_type, MFD_infer_type, MFR_enc_infer_type, MFR_dec_infer_type,
+                          OCR_det_infer_type, OCR_rec_infer_type, wired_table_type, WirelessTable_type,
+                          img_orientation_cls_type, table_cls_type, nstreams, parse_method, formula_enable,
+                          table_enable, f_draw_layout_bbox, f_draw_span_bbox, f_dump_md, f_dump_middle_json,
+                          f_dump_model_output, f_dump_orig_pdf, f_dump_content_list, f_make_md_mode,
+                          f_draw_line_sort_bbox)
     else:
         if backend.startswith("vlm-"):
             backend = backend[4:]

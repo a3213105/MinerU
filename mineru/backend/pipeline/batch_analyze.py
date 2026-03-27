@@ -5,6 +5,7 @@ from loguru import logger
 from tqdm import tqdm
 from collections import defaultdict
 import numpy as np
+import os
 
 from .model_init import AtomModelSingleton
 from .model_list import AtomicModel
@@ -23,7 +24,7 @@ TABLE_Wired_Wireless_CLS_BATCH_SIZE = 16
 
 
 class BatchAnalyze:
-    def __init__(self, model_manager, enable_ov: bool, Layout_infer_type: str,
+    def __init__(self, model_manager, enable_cache, enable_ov: bool, Layout_infer_type: str,
         MFD_infer_type: str, MFR_enc_infer_type: str, MFR_dec_infer_type: str,
         OCR_det_infer_type: str, OCR_rec_infer_type: str, wired_table_type: str,
         WirelessTable_type: str, img_orientation_cls_type: str, table_cls_type, nstreams: int,
@@ -45,39 +46,39 @@ class BatchAnalyze:
         self.img_orientation_cls_type = img_orientation_cls_type
         self.table_cls_type = table_cls_type
         self.nstreams = nstreams
-        self.model = self.model_manager.get_model(
-                enable_ov=self.enable_ov,
-                Layout_infer_type=self.Layout_infer_type,
-                MFD_infer_type=self.MFD_infer_type,
-                MFR_enc_infer_type=self.MFR_enc_infer_type,
-                MFR_dec_infer_type=self.MFR_dec_infer_type,
-                OCR_det_infer_type=self.OCR_det_infer_type,
-                OCR_rec_infer_type=self.OCR_rec_infer_type,
-                wired_table_type=self.wired_table_type,
-                WirelessTable_type=self.WirelessTable_type,
-                img_orientation_cls_type=self.img_orientation_cls_type,
-                table_cls_type=self.table_cls_type,
-                nstreams=self.nstreams,
-                ocr=True,
-                # show_log=self.show_log,
-                lang = None,
-                # layout_model = self.layout_model,
-                formula_enable = self.formula_enable,
-                table_enable = self.table_enable,
-            )
+        self.enable_cache = enable_cache
 
+        YOLO_LAYOUT_BASE_BATCH_SIZE = int(os.environ.get('YOLO_LAYOUT_BASE_BATCH_SIZE', 1))
+        MFD_BASE_BATCH_SIZE = int(os.environ.get('MFD_BASE_BATCH_SIZE', 1))
+        MFR_BASE_BATCH_SIZE = int(os.environ.get('MFR_BASE_BATCH_SIZE', 1))
+        OCR_DET_BASE_BATCH_SIZE = int(os.environ.get('OCR_DET_BASE_BATCH_SIZE', 1))
+        TABLE_ORI_CLS_BATCH_SIZE = int(os.environ.get('TABLE_ORI_CLS_BATCH_SIZE', 1))
+        TABLE_Wired_Wireless_CLS_BATCH_SIZE = int(os.environ.get('TABLE_Wired_Wireless_CLS_BATCH_SIZE', 1))
 
-    def __call__(self, images_with_extra_info: list, tqdm_enable = True) -> list:
+        self.model = self.model_manager.get_model(enable_cache=self.enable_cache, enable_ov=self.enable_ov,
+                                                  Layout_infer_type=self.Layout_infer_type, MFD_infer_type=self.MFD_infer_type,
+                                                  MFR_enc_infer_type=self.MFR_enc_infer_type, MFR_dec_infer_type=self.MFR_dec_infer_type,
+                                                  OCR_det_infer_type=self.OCR_det_infer_type, OCR_rec_infer_type=self.OCR_rec_infer_type,
+                                                  wired_table_type=self.wired_table_type, WirelessTable_type=self.WirelessTable_type,
+                                                  img_orientation_cls_type=self.img_orientation_cls_type, table_cls_type=self.table_cls_type,
+                                                  nstreams=self.nstreams, ocr=True, lang = None, formula_enable = self.formula_enable,
+                                                  table_enable = self.table_enable,)
+
+    def __call__(self, images_with_extra_info: list, tqdm_enable: bool = False) -> list:
         if len(images_with_extra_info) == 0:
             return []
 
         images_layout_res = []
 
-        # self.model = self.model_manager.get_model(
-        #     lang=None,
-        #     formula_enable=self.formula_enable,
-        #     table_enable=self.table_enable,
-        # )
+        # self.model = self.model_manager.get_model(enable_cache=self.enable_cache, enable_ov=self.enable_ov,
+        #                                           Layout_infer_type=self.Layout_infer_type, MFD_infer_type=self.MFD_infer_type,
+        #                                           MFR_enc_infer_type=self.MFR_enc_infer_type, MFR_dec_infer_type=self.MFR_dec_infer_type,
+        #                                           OCR_det_infer_type=self.OCR_det_infer_type, OCR_rec_infer_type=self.OCR_rec_infer_type,
+        #                                           wired_table_type=self.wired_table_type, WirelessTable_type=self.WirelessTable_type,
+        #                                           img_orientation_cls_type=self.img_orientation_cls_type, table_cls_type=self.table_cls_type,
+        #                                           nstreams=self.nstreams, ocr=True, lang = None, formula_enable = self.formula_enable,
+        #                                           table_enable = self.table_enable,)
+
         atom_model_manager = AtomModelSingleton()
 
         pil_images = [image for image, _, _ in images_with_extra_info]
@@ -86,18 +87,18 @@ class BatchAnalyze:
 
         # doclayout_yolo
 
-        images_layout_res += self.model.layout_model.batch_predict(
+        images_layout_res += self.model.get_layout_model().batch_predict(
             pil_images, YOLO_LAYOUT_BASE_BATCH_SIZE
         )
 
         if self.formula_enable:
             # 公式检测
-            images_mfd_res = self.model.mfd_model.batch_predict(
+            images_mfd_res = self.model.get_mfd_model().batch_predict(
                 np_images, MFD_BASE_BATCH_SIZE
             )
 
             # 公式识别
-            images_formula_list = self.model.mfr_model.batch_predict(
+            images_formula_list = self.model.get_mfr_model().batch_predict(
                 images_mfd_res,
                 np_images,
                 batch_size=self.batch_ratio * MFR_BASE_BATCH_SIZE,
@@ -149,6 +150,7 @@ class BatchAnalyze:
         if self.table_enable:
             # 图片旋转批量处理
             img_orientation_cls_model = atom_model_manager.get_atom_model(
+                enable_cache=self.enable_cache,
                 atom_model_name=AtomicModel.ImgOrientationCls,
                 enable_ov = self.enable_ov,
                 img_orientation_cls_type = self.img_orientation_cls_type,
@@ -172,6 +174,7 @@ class BatchAnalyze:
 
             # 表格分类
             table_cls_model = atom_model_manager.get_atom_model(
+                enable_cache=self.enable_cache,
                 atom_model_name=AtomicModel.TableCls,
                 enable_ov = self.enable_ov,
                 table_cls_type = self.table_cls_type,
@@ -190,6 +193,7 @@ class BatchAnalyze:
             # OCR det 过程，顺序执行
             rec_img_lang_group = defaultdict(list)
             det_ocr_engine = atom_model_manager.get_atom_model(
+                enable_cache=self.enable_cache,
                 atom_model_name=AtomicModel.OCR,
                 det_db_box_thresh=0.5,
                 det_db_unclip_ratio=1.6,
@@ -218,6 +222,7 @@ class BatchAnalyze:
             # OCR rec，按照语言分批处理
             for _lang, rec_img_list in rec_img_lang_group.items():
                 ocr_engine = atom_model_manager.get_atom_model(
+                    enable_cache=self.enable_cache,
                     atom_model_name=AtomicModel.OCR,
                     det_db_box_thresh=0.5,
                     det_db_unclip_ratio=1.6,
@@ -229,7 +234,7 @@ class BatchAnalyze:
                     nstreams = self.nstreams,
                 )
                 cropped_img_list = [item["cropped_img"] for item in rec_img_list]
-                ocr_res_list = ocr_engine.ocr(cropped_img_list, det=False, tqdm_enable=True, tqdm_desc=f"Table-rec-{_lang}")[0]
+                ocr_res_list = ocr_engine.ocr(cropped_img_list, det=False, tqdm_enable=tqdm_enable, tqdm_desc=f"Table-rec-{_lang}")[0]
                 # 按照 table_id 将识别结果进行回填
                 for img_dict, ocr_res in zip(rec_img_list, ocr_res_list):
                     if table_res_list_all_page[img_dict["table_id"]].get("ocr_result"):
@@ -245,6 +250,7 @@ class BatchAnalyze:
 
             # 先对所有表格使用无线表格模型，然后对分类为有线的表格使用有线表格模型
             wireless_table_model = atom_model_manager.get_atom_model(
+                enable_cache=self.enable_cache,
                 atom_model_name=AtomicModel.WirelessTable,
                 enable_ov = self.enable_ov,
                 WirelessTable_type = self.WirelessTable_type,
@@ -273,6 +279,7 @@ class BatchAnalyze:
                         continue
 
                     wired_table_model = atom_model_manager.get_atom_model(
+                        enable_cache=self.enable_cache,
                         atom_model_name=AtomicModel.WiredTable,
                         lang=table_res_dict["lang"],
                         enable_ov = self.enable_ov,
@@ -337,6 +344,7 @@ class BatchAnalyze:
 
                 # 获取OCR模型
                 ocr_model = atom_model_manager.get_atom_model(
+                    enable_cache=self.enable_cache,
                     atom_model_name=AtomicModel.OCR,
                     det_db_box_thresh=0.3,
                     lang=lang,
@@ -406,6 +414,7 @@ class BatchAnalyze:
                 _lang = ocr_res_list_dict['lang']
                 # Get OCR results for this language's images
                 ocr_model = atom_model_manager.get_atom_model(
+                    enable_cache=self.enable_cache,
                     atom_model_name=AtomicModel.OCR,
                     ocr_show_log=False,
                     det_db_box_thresh=0.3,
@@ -471,6 +480,7 @@ class BatchAnalyze:
                     # Get OCR results for this language's images
 
                     ocr_model = atom_model_manager.get_atom_model(
+                        enable_cache=self.enable_cache,
                         atom_model_name=AtomicModel.OCR,
                         det_db_box_thresh=0.3,
                         lang=lang,
@@ -479,7 +489,7 @@ class BatchAnalyze:
                         OCR_rec_infer_type = self.OCR_rec_infer_type,
                         nstreams = self.nstreams,
                     )
-                    ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)[0]
+                    ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=tqdm_enable)[0]
 
                     # Verify we have matching counts
                     assert len(ocr_res_list) == len(

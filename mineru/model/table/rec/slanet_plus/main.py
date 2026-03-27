@@ -186,13 +186,13 @@ class RapidTableModel(object):
 
         return None, None, None, None
 
-    def batch_predict(self, table_res_list: List[Dict], batch_size: int = 4, tqdm_enable: bool = True) -> None:
+    def batch_predict(self, table_res_list: List[Dict], batch_size: int = 4, tqdm_enable: bool = False) -> None:
         """对传入的字典列表进行批量预测，无返回值"""
         not_none_table_res_list = []
         for table_res in table_res_list:
             if table_res.get("ocr_result", None):
                 not_none_table_res_list.append(table_res)
-        tqdm_desc = f"Table-wireless predict with OV_{self.table_model.table_structure.infer_type}" if self.table_model.table_structure.enable_ov else "Table-wireless predict"
+        tqdm_desc = f"Table-wireless Predict with OV_{self.table_model.table_structure.infer_type}" if self.table_model.table_structure.enable_ov else "Table-wireless Predict"
         with tqdm(total=len(not_none_table_res_list), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for index in range(0, len(not_none_table_res_list), batch_size):
                 batch_imgs = [

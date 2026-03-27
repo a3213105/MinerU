@@ -183,7 +183,7 @@ class PaddleOrientationClsModel:
         return x
 
     def batch_predict(
-        self, imgs: List[Dict], det_batch_size: int, batch_size: int = 16, tqdm_enable: bool = True
+        self, imgs: List[Dict], det_batch_size: int, batch_size: int = 16, tqdm_enable: bool = False
     ) -> None:
 
         import torch
@@ -261,7 +261,7 @@ class PaddleOrientationClsModel:
         # 对旋转的图片进行旋转角度预测
         if len(rotated_imgs) > 0:
             imgs = self.list_2_batch(rotated_imgs, batch_size=batch_size)
-            tqdm_desc = f"Table-ori stage2 predict with OV_{self.infer_type}" if self.enable_ov else "Table-ori cls stage2 predict"
+            tqdm_desc = f"Table-ori stage2 Predict with OV_{self.infer_type}" if self.enable_ov else "Table-ori cls stage2 Predict"
             with tqdm(total=len(rotated_imgs), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
                 for img_batch in imgs:
                     x = self.batch_preprocess(img_batch)

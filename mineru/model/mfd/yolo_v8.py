@@ -89,7 +89,7 @@ class YOLOv8MFDModel:
         images: List[Union[np.ndarray, Image.Image]],
         batch_size: int = 4,
         conf: float = None,
-        tqdm_enable: bool = True
+        tqdm_enable: bool = False
     ) -> List:
         results = []
         tqdm_desc = f"MFD Predict with OV_{self.infer_type}" if self.enable_ov else "MFD Predict"

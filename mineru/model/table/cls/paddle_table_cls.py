@@ -142,11 +142,11 @@ class PaddleTableClsModel:
         x = np.stack(res_imgs, axis=0).astype(dtype=np.float32, copy=False)
         return x
 
-    def batch_predict(self, img_info_list, batch_size=16, tqdm_enable=True):
+    def batch_predict(self, img_info_list, batch_size=16, tqdm_enable: bool = False):
         imgs = [item["wired_table_img"] for item in img_info_list]
         imgs = self.list_2_batch(imgs, batch_size=batch_size)
         label_res = []
-        tqdm_desc = f"Table-cls predict with OV_{self.infer_type}" if self.enable_ov else "Table-cls predict"
+        tqdm_desc = f"Table-cls Predict with OV_{self.infer_type}" if self.enable_ov else "Table-cls Predict"
         with tqdm(total=len(img_info_list), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for img_batch in imgs:
                 x = self.batch_preprocess(img_batch)

@@ -173,23 +173,22 @@ def page_model_info_to_page_info(page_model_info, image_dict, page, image_writer
     return page_info
 
 
-def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, 
-                          enable_ov, OCR_det_infer_type, OCR_rec_infer_type, nstreams,
-                          lang=None, ocr_enable=False, formula_enabled=True, tqdm_enable=True):
+def result_to_middle_json(model_list, images_list, pdf_doc, image_writer, enable_cache, enable_ov,
+                          OCR_det_infer_type, OCR_rec_infer_type, nstreams, lang=None,
+                          ocr_enable=False, formula_enabled=True, tqdm_enable: bool = False):
     middle_json = {"pdf_info": [], "_backend":"pipeline", "_version_name": __version__}
     formula_enabled = get_formula_enable(formula_enabled)
     tpdm_desc = f"Processing pages with OV_{OCR_rec_infer_type}" if enable_ov else "Processing pages"
     for page_index, page_model_info in tqdm(enumerate(model_list), total=len(model_list), desc=tpdm_desc, disable=not tqdm_enable):
         page = pdf_doc[page_index]
         image_dict = images_list[page_index]
-        page_info = page_model_info_to_page_info(
-            page_model_info, image_dict, page, image_writer, page_index, ocr_enable=ocr_enable, formula_enabled=formula_enabled
-        )
+        page_info = page_model_info_to_page_info(page_model_info, image_dict, page, image_writer, page_index, ocr_enable=ocr_enable, formula_enabled=formula_enabled)
         if page_info is None:
             page_w, page_h = map(int, page.get_size())
             page_info = make_page_info_dict([], page_index, page_w, page_h, [])
         middle_json["pdf_info"].append(page_info)
-
+        del image_dict
+    images_list.clear()
     """后置ocr处理"""
     need_ocr_list = []
     img_crop_list = []
@@ -214,6 +213,7 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer,
     if len(img_crop_list) > 0:
         atom_model_manager = AtomModelSingleton()
         ocr_model = atom_model_manager.get_atom_model(
+            enable_cache=enable_cache,
             atom_model_name='ocr',
             det_db_box_thresh=0.3,
             lang=lang,
@@ -222,7 +222,7 @@ def result_to_middle_json(model_list, images_list, pdf_doc, image_writer,
             OCR_rec_infer_type = OCR_rec_infer_type,
             nstreams = nstreams,
         )
-        ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=True)[0]
+        ocr_res_list = ocr_model.ocr(img_crop_list, det=False, tqdm_enable=tqdm_enable)[0]
         assert len(ocr_res_list) == len(
             need_ocr_list), f'ocr_res_list: {len(ocr_res_list)}, need_ocr_list: {len(need_ocr_list)}'
         for index, span in enumerate(need_ocr_list):

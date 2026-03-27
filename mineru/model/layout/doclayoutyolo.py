@@ -103,7 +103,7 @@ class DocLayoutYOLOModel:
         self,
         images: List[Union[np.ndarray, Image.Image]],
         batch_size: int = 4,
-        tqdm_enable: bool = True
+        tqdm_enable: bool = False
     ) -> List[List[Dict]]:
         results = []
         tqdm_desc = f"Layout Predict with OV_{self.infer_type}" if self.enable_ov else "Layout Predict"

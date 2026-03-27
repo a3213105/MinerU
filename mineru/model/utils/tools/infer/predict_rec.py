@@ -363,7 +363,7 @@ class TextRecognizer(BaseOCRV20):
 
         return img
 
-    def __base_call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
+    def __base_call__(self, img_list, tqdm_enable: bool = False, tqdm_desc="OCR-rec Predict"):
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
         width_list = []
@@ -454,8 +454,8 @@ class TextRecognizer(BaseOCRV20):
 
                         backbone_out = self.net.backbone(inp) # backbone_feat
                         prob_out = self.net.head(backbone_out, [encoder_word_pos_inp, gsrm_word_pos_inp, gsrm_slf_attn_bias1_inp, gsrm_slf_attn_bias2_inp])
-                    # preds = {"predict": prob_out[2]}
-                    preds = {"predict": prob_out["predict"]}
+                    # preds = {"Predict": prob_out[2]}
+                    preds = {"Predict": prob_out["Predict"]}
 
                 elif self.rec_algorithm == "SAR":
                     starttime = time.time()
@@ -512,7 +512,7 @@ class TextRecognizer(BaseOCRV20):
 
         return rec_res, elapse
 
-    def __ov_call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
+    def __ov_call__(self, img_list, tqdm_enable: bool = False, tqdm_desc="OCR-rec Predict"):
         img_num = len(img_list)
 
         # rec_res = []
@@ -562,7 +562,7 @@ class TextRecognizer(BaseOCRV20):
                 norm_img = self.resize_norm_img_ov(norm_img, wh_ratio)
                 norm_img = norm_img[np.newaxis, :]
                 norm_img_batch.append(norm_img)
-        tqdm_desc = f"OCR-rec ({self.rec_algorithm}) predict with OV_{self.infer_type}"
+        tqdm_desc = f"OCR-rec ({self.rec_algorithm}) Predict with OV_{self.infer_type}"
         if self.rec_algorithm == "SRN":
             with tqdm(total=img_num, desc=tqdm_desc, disable=not tqdm_enable) as pbar:
                 preds = self.ov_net({norm_img_batch, encoder_word_pos_inp, gsrm_word_pos_inp, gsrm_slf_attn_bias1_inp, gsrm_slf_attn_bias2_inp})
@@ -585,7 +585,7 @@ class TextRecognizer(BaseOCRV20):
 
         return rec_res, elapse
 
-    def __call__(self, img_list, tqdm_enable=True, tqdm_desc="OCR-rec Predict"):
+    def __call__(self, img_list, tqdm_enable: bool = False, tqdm_desc="OCR-rec Predict"):
         if self.ov_net is not None:
             return self.__ov_call__(img_list, tqdm_enable, f"{tqdm_desc} ({self.rec_algorithm}) with OV_{self.infer_type}")
         else:

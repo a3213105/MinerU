@@ -88,7 +88,7 @@ class FormulaRecognizer(BaseOCRV20):
             character_list=data["PostProcess"]["character_dict"]
         )
 
-    def predict(self, img_list, batch_size: int = 64, tqdm_enable: bool = True):
+    def predict(self, img_list, batch_size: int = 64, tqdm_enable: bool = False):
         # Reduce batch size by 50% to avoid potential memory issues during inference.
         batch_size = int(0.5 * batch_size)
         batch_imgs = self.pre_tfs["UniMERNetImgDecode"](imgs=img_list)

@@ -43,6 +43,9 @@ class UnimernetModel(object):
                 model = model.to(dtype=torch.float16)
             model.eval()
             self.torch_model = model
+            if self.ov_model.converted_to_ov:
+                inputs = torch.random(torch.Size([16, 1, 192, 672]))
+                self.ov_model.convert_ov_model(self.torch_model, inputs)
 
     @staticmethod
     def _filter_boxes_by_iou(xyxy, conf, cla, iou_threshold=0.8):
@@ -133,7 +136,7 @@ class UnimernetModel(object):
             images: list,
             batch_size: int = 64,
             interline_enable: bool = True,
-            tqdm_enable: bool = True
+            tqdm_enable: bool = False
     ) -> list:
         images_formula_list = []
         mf_image_list = []
@@ -202,8 +205,8 @@ class UnimernetModel(object):
                     mf_img = mf_img.to(self.device)
                     with torch.no_grad():
                         output = self.torch_model.generate({"image": mf_img}, batch_size=batch_size)
-                        if self.ov_model.converted_to_ov:
-                            self.ov_model.convert_ov_model(self.torch_model, mf_img)
+                        # if self.ov_model.converted_to_ov:
+                        #     self.ov_model.convert_ov_model(self.torch_model, mf_img)
 
                     mfr_res.extend(output["fixed_str"])
 

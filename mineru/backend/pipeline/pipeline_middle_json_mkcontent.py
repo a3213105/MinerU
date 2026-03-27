@@ -271,6 +271,7 @@ def union_make(pdf_info_dict: list,
         paras_of_discarded = page_info.get('discarded_blocks')
         page_idx = page_info.get('page_idx')
         page_size = page_info.get('page_size')
+        # print(f"Processing page {page_idx} with make_mode {make_mode}...  paras_of_layout={paras_of_layout}, paras_of_discarded={paras_of_discarded}")
         if make_mode in [MakeMode.MM_MD, MakeMode.NLP_MD]:
             if not paras_of_layout:
                 continue

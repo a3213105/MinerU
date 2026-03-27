@@ -29,7 +29,7 @@ class CustomRapidTable(RapidTable):
         print(f"### RapidTable initialized with : {cfg}")
         super().__init__(cfg)
 
-    def __call__(self, img_contents, ocr_results=None, batch_size=1, tqdm_enable=True):
+    def __call__(self, img_contents, ocr_results=None, batch_size=1, tqdm_enable: bool = False):
         if not isinstance(img_contents, list):
             img_contents = [img_contents]
 
@@ -38,7 +38,7 @@ class CustomRapidTable(RapidTable):
         results = RapidTableOutput()
 
         total_nums = len(img_contents)
-        tqdm_desc = f"RapidTable predict with OV_{self.infer_type}" if self.enable_ov else "RapidTable predict"
+        tqdm_desc = f"RapidTable Predict with OV_{self.infer_type}" if self.enable_ov else "RapidTable Predict"
         with tqdm(total=total_nums, desc=tqdm_desc, disable=not tqdm_enable) as pbar:
             for start_i in range(0, total_nums, batch_size):
                 end_i = min(total_nums, start_i + batch_size)

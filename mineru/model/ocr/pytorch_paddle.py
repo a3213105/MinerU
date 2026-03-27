@@ -136,6 +136,24 @@ def get_model_params(lang, config):
 
 root_dir = os.path.join(Path(__file__).resolve().parent.parent, 'utils')
 
+def convert_lang(device, lang):
+    if device == 'cpu' and lang in ['ch', 'ch_server', 'japan', 'chinese_cht']:
+        # logger.warning("The current device in use is CPU. To ensure the speed of parsing, the language is automatically switched to ch_lite.")
+        lang = 'ch_lite'
+
+    if lang in latin_lang:
+        lang = 'latin'
+    elif lang in east_slavic_lang:
+        lang = 'east_slavic'
+    elif lang in arabic_lang:
+        lang = 'arabic'
+    elif lang in cyrillic_lang:
+        lang = 'cyrillic'
+    elif lang in devanagari_lang:
+        lang = 'devanagari'
+    else:
+        pass
+    return lang
 
 class PytorchPaddleOCR(TextSystem):
     def __init__(self, *args, **kwargs):
@@ -145,23 +163,8 @@ class PytorchPaddleOCR(TextSystem):
         self.lang = kwargs.get('lang', 'ch')
         self.enable_merge_det_boxes = kwargs.get("enable_merge_det_boxes", True)
 
-        device = get_device()
-        if device == 'cpu' and self.lang in ['ch', 'ch_server', 'japan', 'chinese_cht']:
-            # logger.warning("The current device in use is CPU. To ensure the speed of parsing, the language is automatically switched to ch_lite.")
-            self.lang = 'ch_lite'
-
-        if self.lang in latin_lang:
-            self.lang = 'latin'
-        elif self.lang in east_slavic_lang:
-            self.lang = 'east_slavic'
-        elif self.lang in arabic_lang:
-            self.lang = 'arabic'
-        elif self.lang in cyrillic_lang:
-            self.lang = 'cyrillic'
-        elif self.lang in devanagari_lang:
-            self.lang = 'devanagari'
-        else:
-            pass
+        device: str = get_device()
+        self.lang = convert_lang(device, self.lang)
 
         models_config_path = os.path.join(root_dir, 'pytorchocr', 'utils', 'resources', 'models_config.yml')
         with open(models_config_path) as file:
@@ -191,7 +194,7 @@ class PytorchPaddleOCR(TextSystem):
             det=True,
             rec=True,
             mfd_res=None,
-            tqdm_enable=True,
+            tqdm_enable: bool = False,
             tqdm_desc="OCR-rec Predict",
             ):
         assert isinstance(img, (np.ndarray, list, str, bytes))

@@ -6,7 +6,7 @@ import requests
 from loguru import logger
 
 from mineru.utils.enum_class import ModelPath
-from mineru.utils.models_download_utils import auto_download_and_get_model_root_path
+from mineru.utils.models_download_utils import auto_download_and_get_model_root_path, auto_download_and_get_model_root_path_2_local
 
 
 def download_json(url):
@@ -58,7 +58,7 @@ def configure_model(model_dir, model_type):
     logger.info(f'The configuration file has been successfully configured, the path is: {config_file}')
 
 
-def download_pipeline_models():
+def download_pipeline_models(outputs):
     """下载Pipeline模型"""
     model_paths = [
         ModelPath.doclayout_yolo,
@@ -75,7 +75,7 @@ def download_pipeline_models():
     download_finish_path = ""
     for model_path in model_paths:
         logger.info(f"Downloading model: {model_path}")
-        download_finish_path = auto_download_and_get_model_root_path(model_path, repo_mode='pipeline')
+        download_finish_path = auto_download_and_get_model_root_path_2_local(model_path, repo_mode='pipeline', cache_dir=outputs)
     logger.info(f"Pipeline models downloaded successfully to: {download_finish_path}")
     configure_model(download_finish_path, "pipeline")
 
@@ -108,7 +108,18 @@ def download_vlm_models():
         """,
     default=None,
 )
-def download_models(model_source, model_type):
+@click.option(
+    '-o',
+    '--outputs',
+    'outputs',
+    type=click.Path(),
+    help="""
+        The output directory for the downloaded models.
+        """,
+    default='./models_cache'
+)
+
+def download_models(model_source, model_type, outputs):
     """Download MinerU model files.
 
     Supports downloading pipeline or VLM models from ModelScope or HuggingFace.
@@ -118,30 +129,37 @@ def download_models(model_source, model_type):
         model_source = click.prompt(
             "Please select the model download source: ",
             type=click.Choice(['huggingface', 'modelscope']),
-            default='huggingface'
+            default='modelscope'
         )
 
-    if os.getenv('MINERU_MODEL_SOURCE', None) is None:
-        os.environ['MINERU_MODEL_SOURCE'] = model_source
+    # if os.getenv('MINERU_MODEL_SOURCE', None) is None:
+    #     os.environ['MINERU_MODEL_SOURCE'] = model_source
 
     # 如果未显式指定则交互式输入模型类型
     if model_type is None:
         model_type = click.prompt(
             "Please select the model type to download: ",
             type=click.Choice(['pipeline', 'vlm', 'all']),
-            default='all'
+            default='pipeline'
         )
 
-    logger.info(f"Downloading {model_type} model from {os.getenv('MINERU_MODEL_SOURCE', None)}...")
+    if outputs is None:
+        outputs = click.prompt(
+            "Please specify the output directory: ",
+            type=click.Path(),
+            default='./models_cache'
+        )
+
+    logger.info(f"Downloading {model_type} model from {model_source} to {outputs} ...")
 
     try:
         if model_type == 'pipeline':
-            download_pipeline_models()
+            download_pipeline_models(outputs)
         elif model_type == 'vlm':
-            download_vlm_models()
+            download_vlm_models(outputs)
         elif model_type == 'all':
-            download_pipeline_models()
-            download_vlm_models()
+            download_pipeline_models(outputs)
+            download_vlm_models(outputs)
         else:
             click.echo(f"Unsupported model type: {model_type}", err=True)
             sys.exit(1)

@@ -6,7 +6,8 @@ from openvino import Core,Model, get_version, AsyncInferQueue, InferRequest, Lay
 from openvino.preprocess import PrePostProcessor, ColorFormat, ResizeAlgorithm
 
 import copy
-    
+
+main_core = Core()
 class OV_Operator(object):
     core = None
     model = None
@@ -29,7 +30,7 @@ class OV_Operator(object):
         else :
             self.name = self.__class__.__name__
         if core is None :
-            self.core = Core()
+            self.core = main_core
         else :
             self.core = core
         self.model = self.core.read_model(model=model)
@@ -89,11 +90,11 @@ class OV_Operator(object):
         if self.request and nsize==1:
             self.res.sync_clean()
             for i, input_tensor in enumerate(input_tensors):
-                result = self.request.infer(input_tensor, share_inputs=True)
+                result = self.request.infer(input_tensor, share_inputs=False)
                 self.res.sync_parser(result, i)
         elif self.infer_queue :
             for i, input_tensor in enumerate(input_tensors):
-                self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=True)
+                self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
         else :
             print("Can not enter here!!!")
@@ -101,7 +102,7 @@ class OV_Operator(object):
 
     def __call__(self, args):
         # print(f"### Running inference with {self.name}")
-        return self.request.infer(args)
+        return self.request.infer(args, share_inputs=False)
 
 class OV_Result :
     results = None
@@ -693,12 +694,12 @@ class RelationsProcessor(OV_Operator):
         nsize=len(input_tensors)
         if nsize>1 or self.request is None:
             for i, input_tensor in input_tensors:
-                self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=True)
+                self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
         else :
             self.res.sync_clean()
             for i, input_tensor in input_tensors:
-                result = self.request.infer(input_tensor)
+                result = self.request.infer(input_tensor, share_inputs=False)
                 self.res.sync_parser(result, i)
 
         res = []
@@ -732,7 +733,7 @@ class Fingerprint(OV_Operator):
 
     def __call__(self, input_tensor) :
         if self.infer_queue:
-            self.infer_queue.start_async({0: input_tensor}, userdata=0, share_inputs=True)
+            self.infer_queue.start_async({0: input_tensor}, userdata=0, share_inputs=False)
         self.infer_queue.wait_all()
        
         if self.postprocess is None:
@@ -794,25 +795,23 @@ class CTCSimpleOCR(OV_Operator):
             self.infer_queue.set_callback(self.ocr_res.completion_callback)
 
     def __call__(self, norm_img_batch_list) :
-        # print(f"CTCSimpleOCR input batch size: {len(norm_img_batch_list)}")
-        if self.request and len(norm_img_batch_list)==1:
+        nsize=len(norm_img_batch_list)
+        if self.infer_queue is None or nsize==1:
             self.ocr_res.sync_clean()
             for i, input_tensor in enumerate(norm_img_batch_list):
-                result = self.request.infer(input_tensor)
-                self.ocr_res.sync_parser(result, 0)
-            return [self.ocr_res.results[0]]
-        
-        nsize=len(norm_img_batch_list)
-        dyanmic_list = []
-        for i, input_tensor in enumerate(norm_img_batch_list):
-            if self.model_dynamic is not None and input_tensor.shape[2] ==320:
-                self.infer_queue.start_async({0: input_tensor}, userdata=i)
-            else :
-                dyanmic_list.append((i,input_tensor))
-        self.infer_queue.wait_all()
-        for i, input_tensor in dyanmic_list:
-            result = self.request.infer(input_tensor)
-            self.ocr_res.sync_parser(result, i)
+                result = self.request.infer(input_tensor, share_inputs=False)
+                self.ocr_res.sync_parser(result, i)
+        else :        
+            dyanmic_list = []
+            for i, input_tensor in enumerate(norm_img_batch_list):
+                if self.model_dynamic is not None and input_tensor.shape[2] ==320:
+                    self.infer_queue.start_async({0: input_tensor}, userdata=i)
+                else :
+                    dyanmic_list.append((i,input_tensor))
+            self.infer_queue.wait_all()
+            for i, input_tensor in dyanmic_list:
+                result = self.request.infer(input_tensor, share_inputs=False)
+                self.ocr_res.sync_parser(result, i)
             
         res = []
         if self.postprocess is None:
@@ -861,11 +860,11 @@ class SqlBertProcessor(OV_Operator):
         if self.request :
             self.res.sync_clean()
             for i, input_tensor in enumerate(input_tensors):
-                result = self.request.infer(input_tensor)
+                result = self.request.infer(input_tensor, share_inputs=False)
                 self.res.sync_parser(result, i)
         else :
             for i, input_tensor in enumerate(input_tensors):
-                self.infer_queue.start_async(input_tensor, userdata=i)
+                self.infer_queue.start_async(input_tensor, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
         
         res = []
@@ -917,11 +916,11 @@ class ObjDetector(OV_Operator):
         if self.request :
             self.det_res.sync_clean()
             for i, image in enumerate(images):
-                result = self.request.infer({0: image})
+                result = self.request.infer({0: image}, share_inputs=False)
                 self.det_res.sync_parser(result, i)
         else :
             for i, image in enumerate(images):
-                self.infer_queue.start_async({0: image}, userdata=i)
+                self.infer_queue.start_async({0: image}, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
             
         if self.postprocess is None:
@@ -945,11 +944,11 @@ class PaddleTextDetector(OV_Operator):
         if self.request :
             self.det_res.sync_clean()
             for i, image in enumerate(images):
-                result = self.request.infer({0: image})
+                result = self.request.infer({0: image}, share_inputs=False)
                 self.det_res.sync_parser(result, i)
         else :
             for i, image in enumerate(images):
-                self.infer_queue.start_async({0: image}, userdata=i)
+                self.infer_queue.start_async({0: image}, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
             
         if self.postprocess is None:
@@ -990,11 +989,11 @@ class TextDetector(OV_Operator):
         if self.request :
             self.det_res.sync_clean()
             for i, image in enumerate(images):
-                result = self.request.infer({0: image})
+                result = self.request.infer({0: image}, share_inputs=False)
                 self.det_res.sync_parser(result, i)
         else :
             for i, image in enumerate(images):
-                self.infer_queue.start_async({0: image}, userdata=i)
+                self.infer_queue.start_async({0: image}, userdata=i, share_inputs=False)
             self.infer_queue.wait_all()
             
         if self.postprocess is None:
@@ -1035,7 +1034,7 @@ class TextRecognizerOV(OV_Operator):
         #    self.infer_queue.start_async({0: norm_img_batch_list[i]}, userdata=i)
 
         for i, input_tensor in enumerate(norm_img_batch_list):
-            self.infer_queue.start_async({0: input_tensor}, userdata=i)
+            self.infer_queue.start_async({0: input_tensor}, userdata=i, share_inputs=False)
             
         self.infer_queue.wait_all()
 
@@ -1075,7 +1074,7 @@ class TextClassfier(OV_Operator):
 
     def __call__(self, norm_img_batch_list) :
         for i, input_tensor in enumerate(norm_img_batch_list):
-            self.infer_queue.start_async({0: input_tensor}, userdata=i)
+            self.infer_queue.start_async({0: input_tensor}, userdata=i, share_inputs=False)
 
         self.infer_queue.wait_all()
 

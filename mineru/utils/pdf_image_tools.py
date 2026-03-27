@@ -168,6 +168,121 @@ def load_images_from_pdf(
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+def load_image_from_pdf(
+    pdf_bytes: bytes,
+    pdf_doc,
+    dpi=200,
+    start_page_id=0,
+    end_page_id=None,
+    image_type=ImageType.PIL,
+    timeout=None,
+    threads=None,
+):
+    """带超时控制的 PDF 转图片函数,支持多进程加速
+
+    Args:
+        pdf_bytes (bytes): PDF 文件的 bytes
+        dpi (int, optional): reset the dpi of dpi. Defaults to 200.
+        start_page_id (int, optional): 起始页码. Defaults to 0.
+        end_page_id (int | None, optional): 结束页码. Defaults to None.
+        image_type (ImageType, optional): 图片类型. Defaults to ImageType.PIL.
+        timeout (int | None, optional): 超时时间(秒)。如果为 None，则从环境变量 MINERU_PDF_RENDER_TIMEOUT 读取，若未设置则默认为 300 秒。
+        threads (int): 进程数, 如果为 None，则从环境变量 MINERU_PDF_RENDER_THREADS 读取，若未设置则默认为 4.
+
+    Raises:
+        TimeoutError: 当转换超时时抛出
+    """
+    if is_windows_environment():
+        # Windows 环境下不使用多进程
+        return load_images_from_pdf_core(
+            pdf_bytes,
+            dpi,
+            start_page_id,
+            get_end_page_id(end_page_id, len(pdf_doc)),
+            image_type,
+        )
+    else:
+        if timeout is None:
+            timeout = get_load_images_timeout()
+        if threads is None:
+            threads = get_load_images_threads()
+
+        end_page_id = get_end_page_id(end_page_id, len(pdf_doc))
+
+        # 计算总页数
+        total_pages = end_page_id - start_page_id + 1
+
+        # 实际使用的进程数不超过总页数
+        actual_threads = min(os.cpu_count() or 1, threads, total_pages)
+
+        # 根据实际进程数分组页面范围
+        pages_per_thread = max(1, total_pages // actual_threads)
+        page_ranges = []
+
+        for i in range(actual_threads):
+            range_start = start_page_id + i * pages_per_thread
+            if i == actual_threads - 1:
+                # 最后一个进程处理剩余所有页面
+                range_end = end_page_id
+            else:
+                range_end = start_page_id + (i + 1) * pages_per_thread - 1
+
+            page_ranges.append((range_start, range_end))
+
+        # logger.debug(f"PDF to images using {actual_threads} processes, page ranges: {page_ranges}")
+
+        executor = ProcessPoolExecutor(max_workers=actual_threads)
+        try:
+            # 提交所有任务
+            futures = []
+            future_to_range = {}
+            for range_start, range_end in page_ranges:
+                future = executor.submit(
+                    _load_images_from_pdf_worker,
+                    pdf_bytes,
+                    dpi,
+                    range_start,
+                    range_end,
+                    image_type,
+                )
+                futures.append(future)
+                future_to_range[future] = range_start
+
+            # 使用 wait() 设置单一全局超时
+            done, not_done = wait(futures, timeout=timeout, return_when=ALL_COMPLETED)
+
+            # 检查是否有未完成的任务（超时情况）
+            if not_done:
+                # 超时：强制终止所有子进程
+                _terminate_executor_processes(executor)
+                pdf_doc.close()
+                raise TimeoutError(f"PDF to images conversion timeout after {timeout}s")
+
+            # 所有任务完成，收集结果
+            all_results = []
+            for future in futures:
+                range_start = future_to_range[future]
+                # 这里不需要 timeout，因为任务已完成
+                images_list = future.result()
+                all_results.append((range_start, images_list))
+
+            # 按起始页码排序并合并结果
+            all_results.sort(key=lambda x: x[0])
+            images_list = []
+            for _, imgs in all_results:
+                images_list.extend(imgs)
+
+            return images_list
+
+        except Exception as e:
+            # 发生任何异常时，确保清理子进程
+            _terminate_executor_processes(executor)
+            pdf_doc.close()
+            if isinstance(e, TimeoutError):
+                raise
+            raise
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 def _terminate_executor_processes(executor):
     """强制终止 ProcessPoolExecutor 中的所有子进程"""

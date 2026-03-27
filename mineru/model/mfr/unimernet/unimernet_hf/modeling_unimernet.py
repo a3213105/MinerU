@@ -332,10 +332,10 @@ class UnimernetModel_ov :
                 break
         return input_ids
    
-    def inference(self, sorted_images, batch_size, tqdm_enable = True) :
+    def inference(self, sorted_images, batch_size, tqdm_enable: bool = False) :
         # Process batches and store results
         mfr_res = []
-        desc_str = f"MFR_OV_{self.enc_type}_{self.dec_type} Predict"
+        desc_str = f"MFR Predict with OV_{self.enc_type}_{self.dec_type}"
         for mf_img in tqdm(sorted_images, desc=desc_str, disable=not tqdm_enable):
             mf_img = self.transform(mf_img).unsqueeze(0)
             outputs = self.generate(mf_img)
