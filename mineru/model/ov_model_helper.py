@@ -2082,18 +2082,10 @@ class UnimernetConverterWrapper(ModelWrapper) :
             cleanup_torchscript_cache()
 
 class LayoutreaderConverter(ModelWrapper) :
-    # def forward(self, input_ids, attention_mask, bbox):
-    #     with torch.no_grad():
-    #         logits= self.model_wrapper(input_ids=input_ids, attention_mask=attention_mask, bbox=bbox, return_dict=False)[0]
-    #         logits = logits.squeeze(0)
-    #         return logits
-
     def forward(self, input_ids, attention_mask, bbox):
         with torch.no_grad():
             logits= self.model_wrapper(input_ids=input_ids, attention_mask=attention_mask, bbox=bbox, return_dict=False)[0]
-            length = input_ids.shape[1] - 2
-            logits_index = logits.squeeze(0)[1 : length + 1, :length].argmax(dim=-1)
-            return logits_index
+            return logits.squeeze(0)
 
     def convert_model(self, xml_path, example_inputs, compress_weights=False):
         with torch.no_grad():

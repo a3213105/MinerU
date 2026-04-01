@@ -22,6 +22,24 @@ image_suffixes = ["png", "jpeg", "jp2", "webp", "gif", "bmp", "jpg", "tiff"]
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+def set_env(enable_cache, config_json_path=None):
+    os.environ['MINERU_MODEL_SOURCE'] = 'local'
+    os.environ['YOLO_VERBOSE'] = 'False'
+
+    if config_json_path:
+        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_json_path).expanduser().resolve())
+
+    if enable_cache:
+        os.environ['MINERU_PDF_RENDER_THREADS'] = '16'
+        os.environ['MINERU_MIN_BATCH_INFERENCE_SIZE'] = '512'
+        os.environ['MINERU_OCR_REC_CHUNK_SIZE'] = '256'
+        os.environ['MINERU_FORCE_DISABLE_OCR_DET_BATCH'] = '0'
+    else:
+        os.environ['MINERU_PDF_RENDER_THREADS'] = '1'
+        os.environ['MINERU_MIN_BATCH_INFERENCE_SIZE'] = '1'
+        os.environ['MINERU_OCR_REC_CHUNK_SIZE'] = '1'
+        os.environ['MINERU_FORCE_DISABLE_OCR_DET_BATCH'] = '1'
+
 def read_fn(path):
     if not isinstance(path, Path):
         path = Path(path)

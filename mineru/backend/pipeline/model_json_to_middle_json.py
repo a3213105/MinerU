@@ -159,9 +159,7 @@ def page_model_info_to_page_info(page_model_info, image_dict, page, image_writer
             )
 
     """span填充进block"""
-    print(f"page {page_index} all_bboxes: {len(all_bboxes)}, spans: {len(spans)}")  # --- IGNORE ---
     block_with_spans, spans = fill_spans_in_blocks(all_bboxes, spans, 0.5)
-    print(f"page {page_index} block_with_spans: {len(block_with_spans)}, spans not in blocks: {len(spans)}")  # --- IGNORE ---
 
     """对block进行fix操作"""
     fix_blocks = fix_block_spans(block_with_spans)

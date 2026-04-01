@@ -129,7 +129,6 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
     with torch.no_grad():
         orders = do_predict(boxes, model)
     sorted_bboxes = [page_line_list[i] for i in orders]
-
     return sorted_bboxes
 
 
@@ -228,9 +227,11 @@ class LayoutReaderModel:
                     logger.warning('local layoutreader model not exists, use online model from huggingface')
                     self.model = LayoutLMv3ForTokenClassification.from_pretrained('hantian/layoutreader')
                 if self.enable_ov:
-                    bbox = torch.tensor([[[  0,   0,   0,   0], [505, 885, 922, 902], [  0,   0,   0,   0]]])
-                    attention_mask = torch.tensor([[1, 1, 1,]])
-                    input_ids = torch.tensor([[0, 3, 2]])
+                    bbox = torch.tensor([[[  0,   0,   0,   0], [15, 15, 22, 22], [55, 88, 92, 92],
+                                          [105, 185, 222, 202], [305, 385, 422, 402], [505, 585, 622, 602],
+                                          [705, 785, 822, 802], [  0,   0,   0,   0]]])
+                    attention_mask = torch.tensor([[1, 1, 1, 1, 1, 1, 1, 1,]])
+                    input_ids = torch.tensor([[0, 3, 3, 3, 3, 3, 3, 2]])
                     from mineru.model.ov_model_helper import LayoutreaderConverter
                     converter = LayoutreaderConverter(self.model)
                     example_inputs = {'input_ids': input_ids, 'bbox': bbox, 'attention_mask': attention_mask,}
@@ -254,18 +255,15 @@ class LayoutReaderModel:
     def __call__(self, length, **xargs):
         if self.ov_net is not None:
             logits = self.ov_net(xargs)
-            # logits = logits[1 : length + 1, :length]
-            # import numpy as np
-            # orders = np.argsort(logits, axis=-1).tolist()
-            # ret = logits.tolist()
-            # print(f"### final ret({len(ret)}): {ret}")
-            return logits.tolist()
+            logits = logits[1 : length + 1, :length]
+            import numpy as np
+            orders = np.argsort(logits, axis=-1)
         else :
             logits = self.model(**xargs).logits.cpu().squeeze(0)
             logits = logits[1 : length + 1, :length]
-            orders = logits.argsort(descending=False).tolist()
-        from mineru.model.reading_order.layout_reader import parse_logits_list
-        return parse_logits_list(logits, orders)
+            orders = logits.argsort(descending=False)
+        from mineru.model.reading_order.layout_reader import parse_logits_list as parse_logits
+        return parse_logits(logits, orders)
 
 def do_predict(boxes: List[List[int]], model) -> List[int]:
     from mineru.model.reading_order.layout_reader import boxes2inputs, prepare_inputs

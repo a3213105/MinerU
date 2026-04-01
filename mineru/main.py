@@ -4,28 +4,9 @@ import argparse
 from pathlib import Path
 os.environ["YOLO_VERBOSE"] = 'False'
 from loguru import logger
-from mineru.cli.common import read_fn, do_parse, init_BatchAnalyze
+from mineru.cli.common import read_fn, do_parse, init_BatchAnalyze, set_env
 from mineru.utils.enum_class import MakeMode
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path
-
-def set_env(enable_cache, config_json_path=None):
-    os.environ['MINERU_MODEL_SOURCE'] = 'local'
-    os.environ['YOLO_VERBOSE'] = 'False'
-
-    if config_json_path:
-        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_json_path).expanduser().resolve())
-
-    if enable_cache:
-        os.environ['MINERU_PDF_RENDER_THREADS'] = '16'
-        os.environ['MINERU_MIN_BATCH_INFERENCE_SIZE'] = '512'
-        os.environ['MINERU_OCR_REC_CHUNK_SIZE'] = '256'
-        os.environ['MINERU_FORCE_DISABLE_OCR_DET_BATCH'] = '0'
-    else:
-        os.environ['MINERU_PDF_RENDER_THREADS'] = '1'
-        os.environ['MINERU_MIN_BATCH_INFERENCE_SIZE'] = '1'
-        os.environ['MINERU_OCR_REC_CHUNK_SIZE'] = '1'
-        os.environ['MINERU_FORCE_DISABLE_OCR_DET_BATCH'] = '1'
-
         
 def parse_args():
     parser = argparse.ArgumentParser(
