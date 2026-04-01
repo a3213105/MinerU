@@ -56,6 +56,9 @@ class TableStructurer:
                 json.dump(self.character, f, ensure_ascii=False, indent=2)
         self.postprocess_op = TableLabelDecode(self.character)
 
+    def remove_unused_weight(self) :
+        pass
+
     def process(self, img):
         starttime = time.time()
         data = {"image": img}

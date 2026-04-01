@@ -16,19 +16,19 @@ from mineru.model.ov_operator_async import OnnxSessProcessor
 class PaddleOrientationClsModel:
     def __init__(self, enable_ov, infer_type, ocr_engine):
         self.sess = None
-        model_path = os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_orientation_classification), ModelPath.paddle_orientation_classification)
+        self.model_path = os.path.join(auto_download_and_get_model_root_path(ModelPath.paddle_orientation_classification), ModelPath.paddle_orientation_classification)
         self.enable_ov = enable_ov
         self.infer_type = infer_type
         if self.enable_ov:
             try :
-                self.sess = OnnxSessProcessor(model_path, "PaddleOrientationClsModel")
+                self.sess = OnnxSessProcessor(self.model_path, "PaddleOrientationClsModel")
                 self.sess.setup_model(1, self.infer_type)
             except Exception as e:
                 print(f"Failed to initialize OpenVINO model, falling back to ONNX. Error: {e}")
                 self.sess = None
         if self.sess is None:
             self.enable_ov = False
-            self.sess = onnxruntime.InferenceSession(model_path)
+            self.sess = onnxruntime.InferenceSession(self.model_path)
         self.ocr_engine = ocr_engine
         self.less_length = 256
         self.cw, self.ch = 224, 224
@@ -36,6 +36,9 @@ class PaddleOrientationClsModel:
         self.scale = 0.00392156862745098
         self.mean = [0.485, 0.456, 0.406]
         self.labels = ["0", "90", "180", "270"]
+    
+    def remove_unused_weight(self) :
+        pass
 
     def preprocess(self, input_img):
         # 放大图片，使其最短边长为256

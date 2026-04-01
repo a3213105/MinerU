@@ -189,6 +189,10 @@ class PytorchPaddleOCR(TextSystem):
 
         super().__init__(args)
 
+    def remove_unused_weight(self) :
+        self.text_detector.remove_unused_weight()
+        self.text_recognizer.remove_unused_weight()
+
     def ocr(self,
             img,
             det=True,

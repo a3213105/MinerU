@@ -92,7 +92,8 @@ def prepare_block_bboxes(
     all_discarded_blocks = remove_overlaps_min_blocks(all_discarded_blocks)
 
     """粗排序后返回"""
-    all_bboxes.sort(key=lambda x: x[0]+x[1])
+    # all_bboxes.sort(key=lambda x: x[0]+x[1])
+    all_bboxes.sort(key=lambda x: (x[1], x[0]))
     return all_bboxes, all_discarded_blocks, footnote_blocks
 
 

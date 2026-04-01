@@ -149,14 +149,25 @@ from .common import do_parse, read_fn, pdf_suffixes, image_suffixes
     """,
     default='huggingface',
 )
+@click.option(
+    '--config-path',
+    '--config',
+    'config_path',
+    type=click.Path(),
+    help='Path to mineru.json configuration file.',
+    default='./mineru.json',
+)
 
 
 def main(
         ctx,
         input_path, output_dir, method, backend, lang, server_url,
         start_page_id, end_page_id, formula_enable, table_enable,
-        device_mode, virtual_vram, model_source, **kwargs
+        device_mode, virtual_vram, model_source, config_path, **kwargs
 ):
+
+    if config_path:
+        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_path).expanduser().resolve())
 
     kwargs.update(arg_parse(ctx))
 
@@ -184,29 +195,24 @@ def main(
 
     def parse_doc(path_list: list[Path]):
         try:
-            file_name_list = []
-            pdf_bytes_list = []
-            lang_list = []
             for path in path_list:
                 file_name = str(Path(path).stem)
                 pdf_bytes = read_fn(path)
-                file_name_list.append(file_name)
-                pdf_bytes_list.append(pdf_bytes)
-                lang_list.append(lang)
-            do_parse(
-                output_dir=output_dir,
-                pdf_file_names=file_name_list,
-                pdf_bytes_list=pdf_bytes_list,
-                p_lang_list=lang_list,
-                backend=backend,
-                parse_method=method,
-                formula_enable=formula_enable,
-                table_enable=table_enable,
-                server_url=server_url,
-                start_page_id=start_page_id,
-                end_page_id=end_page_id,
-                **kwargs,
-            )
+                do_parse(
+                    output_dir=output_dir,
+                    pdf_file_names=[file_name],
+                    pdf_bytes_list=[pdf_bytes],
+                    p_lang_list=[lang],
+                    backend=backend,
+                    parse_method=method,
+                    formula_enable=formula_enable,
+                    table_enable=table_enable,
+                    server_url=server_url,
+                    start_page_id=start_page_id,
+                    end_page_id=end_page_id,
+                    **kwargs,
+                )
+                del pdf_bytes
         except Exception as e:
             logger.exception(e)
 

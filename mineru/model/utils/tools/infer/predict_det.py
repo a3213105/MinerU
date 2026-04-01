@@ -113,7 +113,8 @@ class TextDetector(BaseOCRV20):
 
         self.enable_ov = args.enable_ov
         self.infer_type = args.OCR_det_infer_type
-        self.ov_file_name = f"{args.det_model_path}.xml"
+        self.weights_path = args.det_model_path
+        self.ov_file_name = f"{self.weights_path}.xml"
         self.ov_net = None
         if self.enable_ov:
             try:
@@ -122,7 +123,6 @@ class TextDetector(BaseOCRV20):
             except Exception as e:
                 print(f"### PaddleTextDetector setup failed: {e}")
         if self.ov_net is None:
-            self.weights_path = args.det_model_path
             self.yaml_path = args.det_yaml_path
             network_config = utility.get_arch_config(self.weights_path)
             super(TextDetector, self).__init__(network_config, **kwargs)
@@ -141,6 +141,13 @@ class TextDetector(BaseOCRV20):
             for module in self.net.modules():
                 if hasattr(module, 'rep'):
                     module.rep()
+
+    def remove_unused_weight(self) :
+        if self.ov_net is not None and os.path.isfile(self.weights_path):
+            try:
+                os.remove(self.weights_path)
+            except Exception as e:
+                print(f"TextDetector Failed to remove {self.weights_path}: {e}")
 
     def _batch_process_same_size(self, img_list):
         """
@@ -335,7 +342,7 @@ class TextDetector(BaseOCRV20):
         preds = {}
 
         if self.ov_net is not None:
-            outputs = self.ov_net([img])
+            outputs = self.ov_net([img])[0]
             if self.det_algorithm == "EAST":
                 preds['f_geo'] = outputs[0]
                 preds['f_score'] = outputs[1]
@@ -345,7 +352,7 @@ class TextDetector(BaseOCRV20):
                 preds['f_tco'] = outputs[2]
                 preds['f_tvo'] = outputs[3]
             elif self.det_algorithm in ['DB', 'PSE', 'DB++']:
-                preds['maps'] = np.expand_dims(outputs[0], axis=0)
+                preds['maps'] = outputs[0]
             elif self.det_algorithm == 'FCE':
                 for i, (k, output) in enumerate(outputs.items()):
                     preds['level_{}'.format(i)] = output

@@ -249,12 +249,23 @@ def to_pdf(file_path):
          "'a' for type '$', 'b' for type '()[]', 'all' for both types.",
     default='all',
 )
+@click.option(
+    '--config-path',
+    '--config',
+    'config_path',
+    type=click.Path(),
+    help='Path to mineru.json configuration file.',
+    default='./mineru.json',
+)
 def main(ctx,
         example_enable,
         http_client_enable,
         api_enable, max_convert_pages,
-        server_name, server_port, latex_delimiters_type, **kwargs
+        server_name, server_port, latex_delimiters_type, config_path, **kwargs
 ):
+
+    if config_path:
+        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_path).expanduser().resolve())
 
     # 创建 i18n 实例，支持中英文
     i18n = gr.I18n(

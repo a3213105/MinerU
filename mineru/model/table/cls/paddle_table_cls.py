@@ -35,6 +35,9 @@ class PaddleTableClsModel:
         self.mean = [0.485, 0.456, 0.406]
         self.labels = [AtomicModel.WiredTable, AtomicModel.WirelessTable]
 
+    def remove_unused_weight(self) :
+        pass
+
     def preprocess(self, input_img):
         # 放大图片，使其最短边长为256
         h, w = input_img.shape[:2]

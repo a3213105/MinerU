@@ -4,8 +4,13 @@ from tqdm import tqdm
 
 from mineru.utils.boxbase import calculate_iou
 import openvino as ov
-from .unimernet_hf import UnimernetModel_ov
-
+# from .unimernet_hf import UnimernetModel_ov
+from mineru.model.ov_operator_async import UnimernetEncDecModelWrapper
+from .unimernet_hf.unimer_swin import UnimerSwinImageProcessor
+from .unimernet_hf.modeling_unimernet import TokenizerWrapper
+from transformers import AutoTokenizer
+import os
+import glob
 class MathDataset(Dataset):
     def __init__(self, image_paths, transform=None):
         self.image_paths = image_paths
@@ -22,14 +27,18 @@ class MathDataset(Dataset):
 
 class UnimernetModel(object):
     def __init__(self, weight_dir, enable_ov, enc_type, dec_type, _device_="cpu"):
-        self.ov_model: UnimernetModel_ov = UnimernetModel_ov(None, weight_dir, enc_type, dec_type)
+        self.torch_weight = weight_dir
+        self.enc_infer_type = enc_type
+        self.dec_infer_type = dec_type
+        self.transform = UnimerSwinImageProcessor()
+        self.tokenizer = TokenizerWrapper(AutoTokenizer.from_pretrained(self.torch_weight))
+        # self.ov_model: UnimernetModel_ov = UnimernetModel_ov(None, weight_dir, enc_type, dec_type)
+        self.ov_model = UnimernetEncDecModelWrapper(None, self.torch_weight, self.enc_infer_type, self.dec_infer_type)
         if enable_ov and self.ov_model.using_ov :
             self.enable_ov = True
             return 
         else :
             self.enable_ov = False
-        self.enc_infer_type = enc_type
-        self.dec_infer_type = dec_type
 
         if not self.enable_ov :
             from .unimernet_hf import UnimernetModel
@@ -44,8 +53,21 @@ class UnimernetModel(object):
             model.eval()
             self.torch_model = model
             if self.ov_model.converted_to_ov:
-                inputs = torch.random(torch.Size([16, 1, 192, 672]))
-                self.ov_model.convert_ov_model(self.torch_model, inputs)
+                inputs = torch.randn(torch.Size([16, 1, 192, 672]))
+                from mineru.model.ov_model_helper import UnimernetConverterWrapper
+                converter = UnimernetConverterWrapper(self.torch_model, self.torch_weight)
+                converter.convert_ov_model(inputs)
+
+    def remove_unused_weight(self) :
+        return
+        if self.enable_ov and self.ov_model is not None:
+            for file_path in glob.glob(os.path.join(self.torch_weight, "*")):
+                filename = os.path.basename(file_path)
+                if filename.endswith(".safetensors"):
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        print(f"Failed to remove {file_path}: {e}")
 
     @staticmethod
     def _filter_boxes_by_iou(xyxy, conf, cla, iou_threshold=0.8):
@@ -193,12 +215,21 @@ class UnimernetModel(object):
         # for mf_img in dataloader:
 
         if self.enable_ov :
-            mfr_res = self.ov_model.inference(sorted_images, batch_size)        
+            # mfr_res = self.ov_model.inference(sorted_images, batch_size)
+            mfr_res = []
+            desc_str = f"MFR Predict with OV_{self.enc_infer_type}_{self.dec_infer_type}"
+            for mf_img in tqdm(sorted_images, desc=desc_str, disable=not tqdm_enable):
+                mf_img = self.transform(mf_img).unsqueeze(0)
+                outputs = self.ov_model.generate(mf_img)
+                mfr_res.extend(outputs)
+            pred_str = self.tokenizer.token2str(mfr_res)
+            from ..utils import latex_rm_whitespace
+            mfr_res = [latex_rm_whitespace(s) for s in pred_str]
         else :
             # Create dataset with sorted images
             dataset = MathDataset(sorted_images, transform=self.torch_model.transform)
             dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
-            tqdm_desc = f"MFR Predict with OV_{self.infer_type}" if self.enable_ov else "MFR Predict"
+            tqdm_desc = "MFR Predict"
             with tqdm(total=len(sorted_images), desc=tqdm_desc, disable=not tqdm_enable) as pbar:
                 for index, mf_img in enumerate(dataloader):
                     mf_img = mf_img.to(dtype=self.torch_model.dtype)

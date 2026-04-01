@@ -1,4 +1,6 @@
 import click
+import os
+from pathlib import Path
 
 
 def arg_parse(ctx: 'click.Context') -> dict:
@@ -30,6 +32,12 @@ def arg_parse(ctx: 'click.Context') -> dict:
                             extra_kwargs[param_name] = ctx.args[i]
                 except:
                     extra_kwargs[param_name] = ctx.args[i]
+
+                if param_name in {'config_path', 'config'} and extra_kwargs.get(param_name):
+                    os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(
+                        Path(str(extra_kwargs[param_name])).expanduser().resolve()
+                    )
+                    extra_kwargs.pop(param_name, None)
             else:
                 # 布尔型标志参数
                 extra_kwargs[param_name] = True

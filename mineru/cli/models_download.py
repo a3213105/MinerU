@@ -41,12 +41,22 @@ def download_and_modify_json(url, local_filename, modifications):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-def configure_model(model_dir, model_type):
+def configure_model(model_dir, model_type, config_file_path=None):
     """配置模型"""
     json_url = 'https://gcore.jsdelivr.net/gh/opendatalab/MinerU@master/mineru.template.json'
-    config_file_name = os.getenv('MINERU_TOOLS_CONFIG_JSON', 'mineru.json')
-    home_dir = os.path.expanduser('~')
-    config_file = os.path.join(home_dir, config_file_name)
+    if config_file_path:
+        config_file = os.path.abspath(os.path.expanduser(config_file_path))
+    else:
+        config_file_name = os.getenv('MINERU_TOOLS_CONFIG_JSON', './mineru.json')
+        if os.path.isabs(config_file_name):
+            config_file = config_file_name
+        elif config_file_name.startswith('./') or config_file_name.startswith('../'):
+            config_file = os.path.abspath(os.path.expanduser(config_file_name))
+        else:
+            home_dir = os.path.expanduser('~')
+            config_file = os.path.join(home_dir, config_file_name)
+
+    os.makedirs(os.path.dirname(config_file), exist_ok=True)
 
     json_mods = {
         'models-dir': {
@@ -58,7 +68,7 @@ def configure_model(model_dir, model_type):
     logger.info(f'The configuration file has been successfully configured, the path is: {config_file}')
 
 
-def download_pipeline_models(outputs):
+def download_pipeline_models(outputs, config_file_path=None):
     """下载Pipeline模型"""
     model_paths = [
         ModelPath.doclayout_yolo,
@@ -77,14 +87,14 @@ def download_pipeline_models(outputs):
         logger.info(f"Downloading model: {model_path}")
         download_finish_path = auto_download_and_get_model_root_path_2_local(model_path, repo_mode='pipeline', cache_dir=outputs)
     logger.info(f"Pipeline models downloaded successfully to: {download_finish_path}")
-    configure_model(download_finish_path, "pipeline")
+    configure_model(download_finish_path, "pipeline", config_file_path)
 
 
-def download_vlm_models():
+def download_vlm_models(config_file_path=None):
     """下载VLM模型"""
     download_finish_path = auto_download_and_get_model_root_path("/", repo_mode='vlm')
     logger.info(f"VLM models downloaded successfully to: {download_finish_path}")
-    configure_model(download_finish_path, "vlm")
+    configure_model(download_finish_path, "vlm", config_file_path)
 
 
 @click.command()
@@ -96,7 +106,7 @@ def download_vlm_models():
     help="""
         The source of the model repository. 
         """,
-    default=None,
+    default='modelscope',
 )
 @click.option(
     '-m',
@@ -106,7 +116,7 @@ def download_vlm_models():
     help="""
         The type of the model to download.
         """,
-    default=None,
+    default='pipeline',
 )
 @click.option(
     '-o',
@@ -118,8 +128,18 @@ def download_vlm_models():
         """,
     default='./models_cache'
 )
+@click.option(
+    '--config-path',
+    '-c',
+    'config_file_path',
+    type=click.Path(),
+    help="""
+        The output file path for mineru.json.
+        """,
+    default='./mineru.json',
+)
 
-def download_models(model_source, model_type, outputs):
+def download_models(model_source, model_type, outputs, config_file_path):
     """Download MinerU model files.
 
     Supports downloading pipeline or VLM models from ModelScope or HuggingFace.
@@ -154,12 +174,12 @@ def download_models(model_source, model_type, outputs):
 
     try:
         if model_type == 'pipeline':
-            download_pipeline_models(outputs)
+            download_pipeline_models(outputs, config_file_path)
         elif model_type == 'vlm':
-            download_vlm_models(outputs)
+            download_vlm_models(config_file_path)
         elif model_type == 'all':
-            download_pipeline_models(outputs)
-            download_vlm_models(outputs)
+            download_pipeline_models(outputs, config_file_path)
+            download_vlm_models(config_file_path)
         else:
             click.echo(f"Unsupported model type: {model_type}", err=True)
             sys.exit(1)

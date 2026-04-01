@@ -49,6 +49,9 @@ class WiredTableRecognition:
         self.table_recover = TableRecover()
         self.ocr_engine = ocr_engine
 
+    def remove_unused_weight(self) :
+        self.table_structure.remove_unused_weight()
+
     def __call__(
         self,
         img: InputType,
@@ -259,6 +262,9 @@ class UnetTableModel:
         wired_input_args = WiredTableInput(model_path=model_path)
         self.wired_table_model = WiredTableRecognition(wired_input_args, enable_ov, infer_type, ocr_engine)
         self.ocr_engine = ocr_engine
+
+    def remove_unused_weight(self) :
+        self.wired_table_model.remove_unused_weight()
 
     def predict(self, input_img, ocr_result, wireless_html_code):
         if isinstance(input_img, Image.Image):

@@ -87,12 +87,12 @@ class TextRecognizer(BaseOCRV20):
         self.ov_file_name = f"{args.rec_model_path}.xml"
         self.ov_net = None
         if self.enable_ov:
-            try:
+            # try:
                 self.ov_net = CTCSimpleOCR(self.ov_file_name)
                 self.ov_net.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type,
                                             shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
-            except Exception as e:
-                print(f"### CTCSimpleOCR init failed: {e}")
+            # except Exception as e:
+            #     print(f"### CTCSimpleOCR init {self.ov_file_name} failed: {e}")
 
         if self.ov_net is None:
 
@@ -125,6 +125,13 @@ class TextRecognizer(BaseOCRV20):
                         torch.quantization.fuse_modules(module, ['conv', 'bn', 'act'], inplace=True)
                     else:
                         torch.quantization.fuse_modules(module, ['conv', 'bn'], inplace=True)
+
+    def remove_unused_weight(self) :
+        if self.ov_net is not None and os.path.isfile(self.weights_path):
+            try:
+                os.remove(self.weights_path)
+            except Exception as e:
+                print(f"TextRecognizer Failed to remove {self.weights_path}: {e}")
 
     def resize_norm_img(self, img, max_wh_ratio):
         imgC, imgH, imgW = self.rec_image_shape

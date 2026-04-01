@@ -23,7 +23,7 @@ class YOLOv8MFDModel:
         iou: float = 0.45,
     ):
         self.device = torch.device(device)
-        
+        self.torch_path = weight
         self.enable_ov = enable_ov
         file_name = os.path.basename(weight)
         file_name_without_extension = os.path.splitext(file_name)[0]
@@ -60,6 +60,11 @@ class YOLOv8MFDModel:
             # self.model.predictor.model.pt = False
         else :
             self.ov_yolo = None
+
+    def remove_unused_weight(self) :
+        if self.ov_yolo is not None:
+            if os.path.isfile(self.torch_path):
+                os.remove(self.torch_path)
 
     def _run_predict(
         self,

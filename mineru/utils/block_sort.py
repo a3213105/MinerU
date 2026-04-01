@@ -1,24 +1,24 @@
 # Copyright (c) Opendatalab. All rights reserved.
-import copy
 import os
 import statistics
 import warnings
-from typing import List
+from typing import List, OrderedDict
 import torch
 from loguru import logger
 
 from mineru.utils.config_reader import get_device
 from mineru.utils.enum_class import BlockType, ModelPath
 from mineru.utils.models_download_utils import auto_download_and_get_model_root_path
+from mineru.model.ov_operator_async import LayoutLMv3ClsProcessor
 
 
-def sort_blocks_by_bbox(blocks, page_w, page_h, footnote_blocks):
+def sort_blocks_by_bbox(blocks, page_w, page_h, footnote_blocks, model_manager):
 
     """获取所有line并计算正文line的高度"""
     line_height = get_line_height(blocks)
 
     """获取所有line并对line排序"""
-    sorted_bboxes = sort_lines_by_model(blocks, page_w, page_h, line_height, footnote_blocks)
+    sorted_bboxes = sort_lines_by_model(blocks, page_w, page_h, line_height, footnote_blocks, model_manager)
 
     """根据line的中位数算block的序列关系"""
     blocks = cal_block_index(blocks, sorted_bboxes)
@@ -54,7 +54,7 @@ def get_line_height(blocks):
         return 10
 
 
-def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks):
+def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks, model_manager):
     page_line_list = []
 
     def add_lines_to_block(b):
@@ -73,21 +73,21 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
             if len(block['lines']) == 0:
                 add_lines_to_block(block)
             elif block['type'] in [BlockType.TITLE] and len(block['lines']) == 1 and (block['bbox'][3] - block['bbox'][1]) > line_height * 2:
-                block['real_lines'] = copy.deepcopy(block['lines'])
+                block['real_lines'] = list(block['lines'])
                 add_lines_to_block(block)
             else:
                 for line in block['lines']:
                     bbox = line['bbox']
                     page_line_list.append(bbox)
         elif block['type'] in [BlockType.IMAGE_BODY, BlockType.TABLE_BODY, BlockType.INTERLINE_EQUATION]:
-            block['real_lines'] = copy.deepcopy(block['lines'])
+            block['real_lines'] = list(block['lines'])
             add_lines_to_block(block)
 
     for block in footnote_blocks:
         footnote_block = {'bbox': block[:4]}
         add_lines_to_block(footnote_block)
 
-    if len(page_line_list) > 200:  # layoutreader最高支持512line
+    if len(page_line_list) > 500:  # layoutreader最高支持512line
         return None
 
     # 使用layoutreader排序
@@ -125,8 +125,7 @@ def sort_lines_by_model(fix_blocks, page_w, page_h, line_height, footnote_blocks
             1000 >= right >= left >= 0 and 1000 >= bottom >= top >= 0
         ), f'Invalid box. right: {right}, left: {left}, bottom: {bottom}, top: {top}'  # noqa: E126, E121
         boxes.append([left, top, right, bottom])
-    model_manager = ModelSingleton()
-    model = model_manager.get_model('layoutreader')
+    model = model_manager.model.get_layout_reader_model('layoutreader')
     with torch.no_grad():
         orders = do_predict(boxes, model)
     sorted_bboxes = [page_line_list[i] for i in orders]
@@ -176,91 +175,107 @@ def insert_lines_into_block(block_bbox, line_height, page_w, page_h):
         return [[x0, y0, x1, y1]]
 
 
-def model_init(model_name: str):
-    from transformers import LayoutLMv3ForTokenClassification
-    device_name = get_device()
-    device = torch.device(device_name)
-    bf_16_support = False
-    if device_name.startswith("cuda"):
-        if torch.cuda.get_device_properties(device).major >= 8:
+class LayoutReaderModel:
+    def __init__(self, model_name: str, enable_ov, infer_type):
+        self.device = get_device()
+        bf_16_support = False
+        if self.device.startswith("cuda"):
+            if torch.cuda.get_device_properties(self.device).major >= 8:
+                bf_16_support = True
+        elif self.device.startswith("mps"):
             bf_16_support = True
-    elif device_name.startswith("mps"):
-        bf_16_support = True
-    elif device_name.startswith("gcu"):
-        if hasattr(torch, 'gcu') and torch.gcu.is_available():
-            if torch.gcu.is_bf16_supported():
-                bf_16_support = True
-    elif device_name.startswith("musa"):
-        if hasattr(torch, 'musa') and torch.musa.is_available():
-            if torch.musa.is_bf16_supported():
-                bf_16_support = True
-    elif device_name.startswith("npu"):
-        if hasattr(torch, 'npu') and torch.npu.is_available():
-            if torch.npu.is_bf16_supported():
-                bf_16_support = True
-    elif device_name.startswith("mlu"):
-        if hasattr(torch, 'mlu') and torch.mlu.is_available():
-            if torch.mlu.is_bf16_supported():
-                bf_16_support = True
-    elif device_name.startswith("sdaa"):
-        if hasattr(torch, 'sdaa') and torch.sdaa.is_available():
-            if torch.sdaa.is_bf16_supported():
-                bf_16_support = True  
+        elif self.device.startswith("gcu"):
+            if hasattr(torch, 'gcu') and torch.gcu.is_available():
+                if torch.gcu.is_bf16_supported():
+                    bf_16_support = True
+        elif self.device.startswith("musa"):
+            if hasattr(torch, 'musa') and torch.musa.is_available():
+                if torch.musa.is_bf16_supported():
+                    bf_16_support = True
+        elif self.device.startswith("npu"):
+            if hasattr(torch, 'npu') and torch.npu.is_available():
+                if torch.npu.is_bf16_supported():
+                    bf_16_support = True
+        elif self.device.startswith("mlu"):
+            if hasattr(torch, 'mlu') and torch.mlu.is_available():
+                if torch.mlu.is_bf16_supported():
+                    bf_16_support = True
+        elif self.device.startswith("sdaa"):
+            if hasattr(torch, 'sdaa') and torch.sdaa.is_available():
+                if torch.sdaa.is_bf16_supported():
+                    bf_16_support = True  
 
-    if model_name == 'layoutreader':
-        # 检测modelscope的缓存目录是否存在
-        layoutreader_model_dir = os.path.join(auto_download_and_get_model_root_path(ModelPath.layout_reader), ModelPath.layout_reader)
-        if os.path.exists(layoutreader_model_dir):
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                layoutreader_model_dir
-            )
+        if model_name == 'layoutreader':
+            # 检测modelscope的缓存目录是否存在
+            self.layoutreader_model_dir = os.path.join(auto_download_and_get_model_root_path(ModelPath.layout_reader), ModelPath.layout_reader)
+            self.ov_file_name = f"{self.layoutreader_model_dir}/layoutreader.xml"
+            self.ov_net = None
+            self.enable_ov = enable_ov
+            self.infer_type = infer_type
+            if enable_ov:
+                try:
+                    self.ov_net = LayoutLMv3ClsProcessor(self.ov_file_name)
+                    self.ov_net.setup_model(stream_num=1, infer_type=self.infer_type)
+                except Exception as e:
+                    logger.warning(f"Failed to initialize OpenVINO model: {e}")
+                    self.ov_net = None
+            
+            if self.ov_net is None:
+                from transformers import LayoutLMv3ForTokenClassification
+                if os.path.exists(self.layoutreader_model_dir):
+                    self.model = LayoutLMv3ForTokenClassification.from_pretrained(self.layoutreader_model_dir)
+                else:
+                    logger.warning('local layoutreader model not exists, use online model from huggingface')
+                    self.model = LayoutLMv3ForTokenClassification.from_pretrained('hantian/layoutreader')
+                if self.enable_ov:
+                    bbox = torch.tensor([[[  0,   0,   0,   0], [505, 885, 922, 902], [  0,   0,   0,   0]]])
+                    attention_mask = torch.tensor([[1, 1, 1,]])
+                    input_ids = torch.tensor([[0, 3, 2]])
+                    from mineru.model.ov_model_helper import LayoutreaderConverter
+                    converter = LayoutreaderConverter(self.model)
+                    example_inputs = {'input_ids': input_ids, 'bbox': bbox, 'attention_mask': attention_mask,}
+                    converter.convert_model(xml_path=self.ov_file_name, example_inputs=example_inputs)
+                if bf_16_support:
+                    self.model.to(self.device).eval().bfloat16()
+                else:
+                    self.model.to(self.device).eval()
         else:
-            logger.warning(
-                'local layoutreader model not exists, use online model from huggingface'
-            )
-            model = LayoutLMv3ForTokenClassification.from_pretrained(
-                'hantian/layoutreader'
-            )
-        if bf_16_support:
-            model.to(device).eval().bfloat16()
-        else:
-            model.to(device).eval()
-    else:
-        logger.error('model name not allow')
-        exit(1)
-    return model
+            logger.error('model name not allow')
+            exit(1)
 
+    def remove_unused_weight(self):
+        model_file = f"{self.layoutreader_model_dir}/pytorch_model.bin"
+        if self.ov_net is not None and os.path.exists(model_file):
+            try:
+                os.remove(model_file)
+            except Exception as e:
+                logger.warning(f"LayoutReader Failed to remove layoutreader model dir: {e}")
 
-class ModelSingleton:
-    _instance = None
-    _models = {}
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def get_model(self, model_name: str):
-        if model_name not in self._models:
-            self._models[model_name] = model_init(model_name=model_name)
-        return self._models[model_name]
-
+    def __call__(self, length, **xargs):
+        if self.ov_net is not None:
+            logits = self.ov_net(xargs)
+            # logits = logits[1 : length + 1, :length]
+            # import numpy as np
+            # orders = np.argsort(logits, axis=-1).tolist()
+            # ret = logits.tolist()
+            # print(f"### final ret({len(ret)}): {ret}")
+            return logits.tolist()
+        else :
+            logits = self.model(**xargs).logits.cpu().squeeze(0)
+            logits = logits[1 : length + 1, :length]
+            orders = logits.argsort(descending=False).tolist()
+        from mineru.model.reading_order.layout_reader import parse_logits_list
+        return parse_logits_list(logits, orders)
 
 def do_predict(boxes: List[List[int]], model) -> List[int]:
-    from mineru.model.reading_order.layout_reader import (
-        boxes2inputs, parse_logits, prepare_inputs)
-
+    from mineru.model.reading_order.layout_reader import boxes2inputs, prepare_inputs
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
-
         inputs = boxes2inputs(boxes)
         inputs = prepare_inputs(inputs, model)
-        logits = model(**inputs).logits.cpu().squeeze(0)
-    return parse_logits(logits, len(boxes))
-
+        return model(len(boxes), **inputs)
 
 def cal_block_index(fix_blocks, sorted_bboxes):
-
     if sorted_bboxes is not None:
         # 使用layoutreader排序
         for block in fix_blocks:
@@ -277,8 +292,8 @@ def cal_block_index(fix_blocks, sorted_bboxes):
             # 删除图表body block中的虚拟line信息, 并用real_lines信息回填
             if block['type'] in [BlockType.IMAGE_BODY, BlockType.TABLE_BODY, BlockType.TITLE, BlockType.INTERLINE_EQUATION]:
                 if 'real_lines' in block:
-                    block['virtual_lines'] = copy.deepcopy(block['lines'])
-                    block['lines'] = copy.deepcopy(block['real_lines'])
+                    block['virtual_lines'] = list(block['lines'])
+                    block['lines'] = list(block['real_lines'])
                     del block['real_lines']
     else:
         # 使用xycut排序
@@ -291,8 +306,8 @@ def cal_block_index(fix_blocks, sorted_bboxes):
             # 删除图表body block中的虚拟line信息, 并用real_lines信息回填
             if block['type'] in [BlockType.IMAGE_BODY, BlockType.TABLE_BODY, BlockType.TITLE, BlockType.INTERLINE_EQUATION]:
                 if 'real_lines' in block:
-                    block['virtual_lines'] = copy.deepcopy(block['lines'])
-                    block['lines'] = copy.deepcopy(block['real_lines'])
+                    block['virtual_lines'] = list(block['lines'])
+                    block['lines'] = list(block['real_lines'])
                     del block['real_lines']
 
         import numpy as np

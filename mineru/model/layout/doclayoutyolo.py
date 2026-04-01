@@ -24,6 +24,7 @@ class DocLayoutYOLOModel:
     ):
         self.model = None
         self.enable_ov = enable_ov
+        self.torch_path = weight
         file_name = os.path.basename(weight)
         file_name_without_extension = os.path.splitext(file_name)[0]
         self.ov_file_name = f"{weight}/{file_name_without_extension}.xml".replace(".pt", "_openvino_model")
@@ -67,6 +68,11 @@ class DocLayoutYOLOModel:
             self.model.predictor.inference = infer
         else :
             self.ov_yolo = None
+            
+    def remove_unused_weight(self) :
+        if self.ov_yolo is not None:
+            if os.path.isfile(self.torch_path):
+                os.remove(self.torch_path)
 
     def _parse_prediction(self, prediction) -> List[Dict]:
         layout_res = []

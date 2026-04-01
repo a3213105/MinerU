@@ -208,7 +208,6 @@ async def parse_pdf(
 
         # 处理上传的PDF文件
         pdf_file_names = []
-        pdf_bytes_list = []
 
         for file in files:
             content = await file.read()
@@ -224,8 +223,38 @@ async def parse_pdf(
             if file_suffix in pdf_suffixes + image_suffixes:
                 try:
                     pdf_bytes = read_fn(temp_path)
-                    pdf_bytes_list.append(pdf_bytes)
-                    pdf_file_names.append(file_path.stem)
+                    pdf_name = file_path.stem
+                    pdf_file_names.append(pdf_name)
+
+                    # 为当前文件选择语言，长度不匹配时回退到第一个语言或默认 ch
+                    if len(lang_list) > len(pdf_file_names) - 1:
+                        cur_lang = lang_list[len(pdf_file_names) - 1]
+                    else:
+                        cur_lang = lang_list[0] if lang_list else "ch"
+
+                    await aio_do_parse(
+                        output_dir=unique_dir,
+                        pdf_file_names=[pdf_name],
+                        pdf_bytes_list=[pdf_bytes],
+                        p_lang_list=[cur_lang],
+                        backend=backend,
+                        parse_method=parse_method,
+                        formula_enable=formula_enable,
+                        table_enable=table_enable,
+                        server_url=server_url,
+                        f_draw_layout_bbox=False,
+                        f_draw_span_bbox=False,
+                        f_dump_md=return_md,
+                        f_dump_middle_json=return_middle_json,
+                        f_dump_model_output=return_model_output,
+                        f_dump_orig_pdf=False,
+                        f_dump_content_list=return_content_list,
+                        start_page_id=start_page_id,
+                        end_page_id=end_page_id,
+                        **config,
+                    )
+
+                    del pdf_bytes
                     os.remove(temp_path)  # 删除临时文件
                 except Exception as e:
                     return JSONResponse(
@@ -238,36 +267,8 @@ async def parse_pdf(
                     content={"error": f"Unsupported file type: {file_suffix}"},
                 )
 
-        # 设置语言列表，确保与文件数量一致
-        actual_lang_list = lang_list
-        if len(actual_lang_list) != len(pdf_file_names):
-            # 如果语言列表长度不匹配，使用第一个语言或默认"ch"
-            actual_lang_list = [
-                actual_lang_list[0] if actual_lang_list else "ch"
-            ] * len(pdf_file_names)
-
-        # 调用异步处理函数
-        await aio_do_parse(
-            output_dir=unique_dir,
-            pdf_file_names=pdf_file_names,
-            pdf_bytes_list=pdf_bytes_list,
-            p_lang_list=actual_lang_list,
-            backend=backend,
-            parse_method=parse_method,
-            formula_enable=formula_enable,
-            table_enable=table_enable,
-            server_url=server_url,
-            f_draw_layout_bbox=False,
-            f_draw_span_bbox=False,
-            f_dump_md=return_md,
-            f_dump_middle_json=return_middle_json,
-            f_dump_model_output=return_model_output,
-            f_dump_orig_pdf=False,
-            f_dump_content_list=return_content_list,
-            start_page_id=start_page_id,
-            end_page_id=end_page_id,
-            **config,
-        )
+        if not pdf_file_names:
+            return JSONResponse(status_code=400, content={"error": "No valid files to parse"})
 
         # 根据 response_format_zip 决定返回类型
         if response_format_zip:
@@ -427,7 +428,18 @@ async def parse_pdf(
 @click.option("--host", default="127.0.0.1", help="Server host (default: 127.0.0.1)")
 @click.option("--port", default=8000, type=int, help="Server port (default: 8000)")
 @click.option("--reload", is_flag=True, help="Enable auto-reload (development mode)")
-def main(ctx, host, port, reload, **kwargs):
+@click.option(
+    "--config-path",
+    "--config",
+    "config_path",
+    type=click.Path(),
+    default="./mineru.json",
+    help="Path to mineru.json configuration file",
+)
+def main(ctx, host, port, reload, config_path, **kwargs):
+    if config_path:
+        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_path).expanduser().resolve())
+
     kwargs.update(arg_parse(ctx))
 
     # 将配置参数存储到应用状态中

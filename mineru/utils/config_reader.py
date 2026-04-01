@@ -1,6 +1,7 @@
 # Copyright (c) Opendatalab. All rights reserved.
 import json
 import os
+from pathlib import Path
 from loguru import logger
 
 try:
@@ -10,16 +11,27 @@ except ImportError:
     pass
 
 
-# 定义配置文件名常量
-CONFIG_FILE_NAME = os.getenv('MINERU_TOOLS_CONFIG_JSON', 'mineru.json')
+def get_config_file_name() -> str:
+    return os.getenv('MINERU_TOOLS_CONFIG_JSON', './mineru.json')
+
+
+def set_config_file_path(config_path: str) -> None:
+    if config_path:
+        os.environ['MINERU_TOOLS_CONFIG_JSON'] = str(Path(config_path).expanduser().resolve())
+
+
+def resolve_config_file_path() -> str:
+    config_file_name = get_config_file_name()
+    if os.path.isabs(config_file_name):
+        return config_file_name
+    if config_file_name.startswith('./') or config_file_name.startswith('../'):
+        return os.path.abspath(os.path.expanduser(config_file_name))
+    home_dir = os.path.expanduser('~')
+    return os.path.join(home_dir, config_file_name)
 
 
 def read_config():
-    if os.path.isabs(CONFIG_FILE_NAME):
-        config_file = CONFIG_FILE_NAME
-    else:
-        home_dir = os.path.expanduser('~')
-        config_file = os.path.join(home_dir, CONFIG_FILE_NAME)
+    config_file = resolve_config_file_path()
 
     if not os.path.exists(config_file):
         # logger.warning(f'{config_file} not found, using default configuration')
@@ -40,7 +52,7 @@ def get_s3_config(bucket_name: str):
         access_key, secret_key, storage_endpoint = bucket_info[bucket_name]
 
     if access_key is None or secret_key is None or storage_endpoint is None:
-        raise Exception(f'ak, sk or endpoint not found in {CONFIG_FILE_NAME}')
+        raise Exception(f"ak, sk or endpoint not found in {resolve_config_file_path()}")
 
     # logger.info(f"get_s3_config: ak={access_key}, sk={secret_key}, endpoint={storage_endpoint}")
 
@@ -148,5 +160,5 @@ def get_local_models_dir():
         return None
     models_dir = config.get('models-dir')
     if models_dir is None:
-        logger.warning(f"'models-dir' not found in {CONFIG_FILE_NAME}, use None as default")
+        logger.warning(f"'models-dir' not found in {resolve_config_file_path()}, use None as default")
     return models_dir

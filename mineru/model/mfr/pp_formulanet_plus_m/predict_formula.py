@@ -51,7 +51,7 @@ class FormulaRecognizer(BaseOCRV20):
                 self.ov_net = OnnxSessProcessor(self.ov_file_name)
                 self.ov_net.setup_model(stream_num = 1, infer_type=self.infer_type)
             except Exception as e:
-                print(f"### CTCSimpleOCR init failed: {e}")
+                print(f"### PP-FormulaNet_plus-M init failed: {e}")
         else :
             network_config = pytorchocr_utility.AnalysisConfig(
                 self.weights_path, self.yaml_path
@@ -87,6 +87,14 @@ class FormulaRecognizer(BaseOCRV20):
         self.post_op = UniMERNetDecode(
             character_list=data["PostProcess"]["character_dict"]
         )
+
+    def remove_unused_weight(self) :
+        if self.ov_net is not None and os.path.isfile(self.weights_path):
+            try:
+                os.remove(self.weights_path)
+            except Exception as e:
+                print(f"FormulaRecognizer Failed to remove {self.weights_path}: {e}")
+
 
     def predict(self, img_list, batch_size: int = 64, tqdm_enable: bool = False):
         # Reduce batch size by 50% to avoid potential memory issues during inference.

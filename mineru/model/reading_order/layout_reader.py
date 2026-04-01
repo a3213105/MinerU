@@ -86,6 +86,37 @@ def prepare_inputs(
     return ret
 
 
+def parse_logits_list(logits, orders) -> List[int]:
+    """
+    parse logits to orders
+
+    :param logits: logits from model
+    :param length: input length
+    :return: orders
+    """
+    ret = [o.pop() for o in orders]
+    while True:
+        order_to_idxes = defaultdict(list)
+        for idx, order in enumerate(ret):
+            order_to_idxes[order].append(idx)
+        # filter idxes len > 1
+        order_to_idxes = {k: v for k, v in order_to_idxes.items() if len(v) > 1}
+        if not order_to_idxes:
+            break
+        # filter
+        for order, idxes in order_to_idxes.items():
+            # find original logits of idxes
+            idxes_to_logit = {}
+            for idx in idxes:
+                idxes_to_logit[idx] = logits[idx, order]
+            idxes_to_logit = sorted(
+                idxes_to_logit.items(), key=lambda x: x[1], reverse=True
+            )
+            # keep the highest logit as order, set others to next candidate
+            for idx, _ in idxes_to_logit[1:]:
+                ret[idx] = orders[idx].pop()
+    return ret
+
 def parse_logits(logits: torch.Tensor, length: int) -> List[int]:
     """
     parse logits to orders
@@ -119,6 +150,7 @@ def parse_logits(logits: torch.Tensor, length: int) -> List[int]:
                 ret[idx] = orders[idx].pop()
 
     return ret
+
 
 
 def check_duplicate(a: List[int]) -> bool:

@@ -40,6 +40,9 @@ class RapidTable:
         self.table_structure = TableStructurer(enable_ov, wireless_table_type, asdict(config))
         self.table_matcher = TableMatch()
 
+    def remove_unused_weight(self) :
+        self.table_structure.remove_unused_weight()
+
     def predict(
         self,
         img: np.ndarray,
@@ -160,6 +163,9 @@ class RapidTableModel(object):
         
         self.table_model = RapidTable(enable_ov, wireless_table_type, input_args)
         self.ocr_engine = ocr_engine
+
+    def remove_unused_weight(self) :
+        self.table_model.remove_unused_weight()
 
     def predict(self, image, ocr_result=None):
         bgr_image = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)

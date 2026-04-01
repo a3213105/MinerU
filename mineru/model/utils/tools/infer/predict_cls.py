@@ -35,6 +35,9 @@ class TextClassifier(BaseOCRV20):
         self.net.eval()
         self.net.to(self.device)
 
+    def remove_unused_weight(self) :
+        print(f"### TextClassifier remove_unused_weight called, self.weights_path={self.weights_path}.")
+
     def resize_norm_img(self, img):
         imgC, imgH, imgW = self.cls_image_shape
         h = img.shape[0]

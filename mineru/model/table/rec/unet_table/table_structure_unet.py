@@ -46,6 +46,9 @@ class TSRUnet:
 
             self.session = OrtInferSession(config)
 
+    def remove_unused_weight(self) :
+        pass
+
     def __call__(
         self, img: np.ndarray, **kwargs
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
