@@ -230,7 +230,7 @@ class PytorchPaddleOCR(TextSystem):
                         ocr_res.append(None)
                         continue
                     dt_boxes = sorted_boxes(dt_boxes)
-                    # merge_det_boxes 和 update_det_boxes 都会把poly转成bbox再转回poly，因此需要过滤所有倾斜程度较大的文本框
+                    # merge_det_boxes and update_det_boxes will convert poly to bbox and back to poly, so it is necessary to filter all text boxes with a large tilt.
                     if self.enable_merge_det_boxes:
                         dt_boxes = merge_det_boxes(dt_boxes)
                     if mfd_res:
@@ -268,7 +268,7 @@ class PytorchPaddleOCR(TextSystem):
 
         dt_boxes = sorted_boxes(dt_boxes)
 
-        # merge_det_boxes 和 update_det_boxes 都会把poly转成bbox再转回poly，因此需要过滤所有倾斜程度较大的文本框
+        # merge_det_boxes and update_det_boxes will convert poly to bbox and back to poly, so it is necessary to filter all text boxes with a large tilt.
         if self.enable_merge_det_boxes:
             dt_boxes = merge_det_boxes(dt_boxes)
 

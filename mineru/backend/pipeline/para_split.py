@@ -81,7 +81,6 @@ def __is_list_or_index_block(block):
             block_weight_radio = 0
         else:
             block_weight_radio = block_weight / page_weight
-        # logger.info(f"block_weight_radio: {block_weight_radio}")
 
         # 如果首行左边不顶格而右边顶格,末行左边顶格而右边不顶格 （第一行可能可以右边不顶格）
         if (
@@ -105,7 +104,6 @@ def __is_list_or_index_block(block):
             block_text = ''.join(lines_text_list)
 
         block_lang = detect_lang(block_text)
-        # logger.info(f"block_lang: {block_lang}")
 
         for line in block['lines']:
             line_mid_x = (line['bbox'][0] + line['bbox'][2]) / 2
@@ -319,7 +317,6 @@ def __para_merge_page(blocks):
             for block in text_blocks_group:
                 block_type = __is_list_or_index_block(block)
                 block['type'] = block_type
-                # logger.info(f"{block['type']}:{block}")
 
         if len(text_blocks_group) > 1:
             # 在合并前判断这个group 是否是一个 list group

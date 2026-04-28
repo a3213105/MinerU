@@ -151,18 +151,18 @@ class TextDetector(BaseOCRV20):
 
     def _batch_process_same_size(self, img_list):
         """
-            对相同尺寸的图像进行批处理
+            Batch processing of images of the same size
 
             Args:
-                img_list: 相同尺寸的图像列表
+                img_list: List of images of the same size
 
             Returns:
-                batch_results: 批处理结果列表
-                total_elapse: 总耗时
+                batch_results: Batch result list
+                total_elapse: Total time spent
             """
         starttime = time.time()
 
-        # 预处理所有图像
+        # Preprocess all images
         batch_data = []
         batch_shapes = []
         ori_imgs = []
@@ -174,26 +174,26 @@ class TextDetector(BaseOCRV20):
             data = {'image': img}
             data = transform(data, self.preprocess_op)
             if data is None:
-                # 如果预处理失败，返回空结果
+                # If preprocessing fails, an empty result is returned
                 return [(None, 0) for _ in img_list], 0
 
             img_processed, shape_list = data
             batch_data.append(img_processed)
             batch_shapes.append(shape_list)
 
-        # 堆叠成批处理张量
+        # Stacking into batches of tensors
         try:
             batch_tensor = np.stack(batch_data, axis=0)
             batch_shapes = np.stack(batch_shapes, axis=0)
         except Exception as e:
-            # 如果堆叠失败，回退到逐个处理
+            # If stacking fails, fall back to processing one by one
             batch_results = []
             for img in img_list:
                 dt_boxes, elapse = self.__call__(img)
                 batch_results.append((dt_boxes, elapse))
             return batch_results, time.time() - starttime
 
-        # 批处理推理
+        # batch inference
         if self.ov_net is not None:
             outputs = self.ov_net(batch_tensor)
         else :
@@ -202,7 +202,7 @@ class TextDetector(BaseOCRV20):
                 inp = inp.to(self.device)
                 outputs = self.net(inp)
 
-        # 处理输出
+        # Process output
         preds = {}
         if self.det_algorithm == "EAST":
             preds['f_geo'] = outputs['f_geo'].cpu().numpy()
@@ -220,24 +220,24 @@ class TextDetector(BaseOCRV20):
         else:
             raise NotImplementedError
 
-        # 后处理每个图像的结果
+        # Post-process the results of each image
         batch_results = []
         total_elapse = time.time() - starttime
 
         for i in range(len(img_list)):
-            # 提取单个图像的预测结果
+            # Extract predictions for a single image
             single_preds = {}
             for key, value in preds.items():
                 if isinstance(value, np.ndarray):
-                    single_preds[key] = value[i:i + 1]  # 保持批次维度
+                    single_preds[key] = value[i:i + 1]  # Keep batch dimensions
                 else:
                     single_preds[key] = value
 
-            # 后处理
+            # Post-processing
             post_result = self.postprocess_op(single_preds, batch_shapes[i:i + 1])
             dt_boxes = post_result[0]['points']
 
-            # 过滤和裁剪检测框
+            # Filter and crop detection boxes
             if (self.det_algorithm == "SAST" and
                 self.det_sast_polygon) or (self.det_algorithm in ["PSE", "FCE"] and
                                            self.postprocess_op.box_type == 'poly'):
@@ -251,24 +251,24 @@ class TextDetector(BaseOCRV20):
 
     def batch_predict(self, img_list, max_batch_size=8):
         """
-        批处理预测方法，支持多张图像同时检测
+        Batch prediction method supports simultaneous detection of multiple images
 
         Args:
-            img_list: 图像列表
-            max_batch_size: 最大批处理大小
+            img_list: image list
+            max_batch_size: Maximum batch size
 
         Returns:
-            batch_results: 批处理结果列表，每个元素为(dt_boxes, elapse)
+            batch_results: List of batch processing results, each element is (dt_boxes, elapse)
         """
         if not img_list:
             return []
 
         batch_results = []
 
-        # 分批处理
+        # batch processing
         for i in range(0, len(img_list), max_batch_size):
             batch_imgs = img_list[i:i + max_batch_size]
-            # assert尺寸一致
+            # assertSame size
             batch_dt_boxes, batch_elapse = self._batch_process_same_size(batch_imgs)
             batch_results.extend(batch_dt_boxes)
 

@@ -87,12 +87,12 @@ class TextRecognizer(BaseOCRV20):
         self.ov_file_name = f"{args.rec_model_path}.xml"
         self.ov_net = None
         if self.enable_ov:
-            # try:
+            try:
                 self.ov_net = CTCSimpleOCR(self.ov_file_name)
                 self.ov_net.setup_model(stream_num = self.ov_nstreams, infer_type=self.infer_type,
                                             shape_dynamic=[1, self.rec_image_shape[1], -1, self.rec_image_shape[0]])
-            # except Exception as e:
-            #     print(f"### CTCSimpleOCR init {self.ov_file_name} failed: {e}")
+            except Exception as e:
+                print(f"### CTCSimpleOCR init {self.ov_file_name} failed: {e}")
 
         if self.ov_net is None:
 
@@ -506,7 +506,7 @@ class TextRecognizer(BaseOCRV20):
                     rec_res[indices[beg_img_no + rno]] = rec_result[rno]
                 elapse += time.time() - starttime
 
-                # 更新进度条，每次增加batch_size，但要注意最后一个batch可能不足batch_size
+                # Update the progress bar and increase batch_size each time, but be aware that the last batch may be less than batch_size
                 current_batch_size = min(batch_num, img_num - index * batch_num)
                 index += 1
                 pbar.update(current_batch_size)
