@@ -6,10 +6,12 @@ import os
 import uuid
 import time
 import argparse
+import json
+import statistics
+from typing import Any, Optional
 import numpy as np
-from os import PathLike
 from pathlib import Path
-from magic_pdf.model.doc_analyze_by_custom_model import init_models, doc_analyze_direct
+from mineru.cli.common import do_parse, init_BatchAnalyze, read_fn, set_env
 
 app = Flask(__name__)
 
@@ -23,16 +25,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--mfr_dec_type', type=str, default="bf16", help='formula recognition dec infer type')
     parser.add_argument('--ocr_det_type', type=str, default="bf16", help='ocr detection infer type')
     parser.add_argument('--ocr_rec_type', type=str, default="bf16", help='ocr recognition infer type')
-    parser.add_argument('--table_type', type=str, default="bf16", help='table infer type')
-    parser.add_argument('--lang_type', type=str, default="bf16", help='language detection infer type')
-    parser.add_argument('--page_type', type=str, default="bf16", help='page layout infer type')
+    parser.add_argument('--wired_table_type', type=str, default="bf16", help='wired table infer type')
+    parser.add_argument('--wireless_table_type', type=str, default="bf16", help='wireless table infer type')
+    parser.add_argument('--table_cls_type', type=str, default="bf16", help='page layout infer type')
+    parser.add_argument('--img_cls_type', type=str, default="bf16", help='image orientation classification infer type')
+    parser.add_argument('--layoutreader_type', type=str, default="bf16", help='page layout infer type')
     parser.add_argument('--all', '-a', type=str, default=None, help='set all infer type')
     parser.add_argument('--input', '-i', metavar='INPUT', nargs='+', default="demo/pdfs/demo1.pdf",
                         help='Filenames of input pdfs')
     parser.add_argument('--nstreams', '-n', type=int, default=8, help='Number of ov streams')
     parser.add_argument('--app', '-p', action='store_true', default=False,
                         help='True for app, False for serving')
+    parser.add_argument('--benchmark', action='store_true', default=False,
+                        help='Enable benchmark in app mode only')
+    parser.add_argument('--repeat', '-r', type=int, default=20,
+                        help='Number of measured benchmark rounds in app mode')
+    parser.add_argument('--warmup', '-w', type=int, default=3,
+                        help='Number of warmup rounds in app mode benchmark')
+    parser.add_argument('--benchmark_json', type=str, default=None,
+                        help='Optional benchmark summary output path (json)')
     parser.add_argument('--disable_json', '-j', action='store_true', default=False, help='disable json output')
+    parser.add_argument("--disable_cache", "-c", dest="enable_cache", default=True, action="store_false", help="disable caching")
+    parser.add_argument("--config", type=str, default="./mineru.json", help="Path to mineru.json configuration file",)
+
     return parser.parse_args()
 
 args = parse_args()
@@ -44,9 +59,11 @@ if args.all is not None :
     args.mfr_dec_type = args.all
     args.ocr_det_type = args.all
     args.ocr_rec_type = args.all
-    args.table_type = args.all
-    args.lang_type = args.all
-    args.page_type = args.all
+    args.wired_table_type = args.all
+    args.wireless_table_type = args.all
+    args.img_cls_type = args.all
+    args.table_cls_type = args.all
+    args.layoutreader_type = args.all
 else :
     args.layout_type = args.layout_type.lower()
     args.mfd_type = args.mfd_type.lower()
@@ -54,10 +71,13 @@ else :
     args.mfr_dec_type = args.mfr_dec_type.lower()
     args.ocr_det_type = args.ocr_det_type.lower()
     args.ocr_rec_type = args.ocr_rec_type.lower()
-    args.table_type = args.table_type.lower()
-    args.lang_type = args.lang_type.lower()
-    args.page_type = args.page_type.lower()
+    args.wired_table_type = args.wired_table_type.lower()
+    args.wireless_table_type = args.wireless_table_type.lower()
+    args.img_cls_type = args.img_cls_type.lower()
+    args.table_cls_type = args.table_cls_type.lower()
+    args.layoutreader_type = args.layoutreader_type.lower()
 
+set_env(args.enable_cache, args.config)
 class PDF_Instance :
     def __init__(self, args) :
         if args.all is not None :
@@ -67,9 +87,11 @@ class PDF_Instance :
             args.mfr_dec_type = args.all
             args.ocr_det_type = args.all
             args.ocr_rec_type = args.all
-            args.table_type = args.all
-            args.lang_type = args.all
-            args.page_type = args.all
+            args.wired_table_type = args.all
+            args.wireless_table_type = args.all
+            args.img_cls_type = args.all
+            args.table_cls_type = args.all
+            args.layoutreader_type = args.all
         self.enable_ov = not args.disable_ov
         self.layout_type = args.layout_type
         self.mfd_type = args.mfd_type
@@ -77,30 +99,56 @@ class PDF_Instance :
         self.mfr_dec_type = args.mfr_dec_type
         self.ocr_det_type = args.ocr_det_type
         self.ocr_rec_type = args.ocr_rec_type
-        self.table_type = args.table_type
-        self.lang_type = args.lang_type
-        self.page_type = args.page_type
+        self.wired_table_type = args.wired_table_type
+        self.wireless_table_type = args.wireless_table_type
+        self.img_cls_type = args.img_cls_type
+        self.table_cls_type = args.table_cls_type
+        self.layoutreader_type = args.layoutreader_type
         self.nstreams = args.nstreams
-        self.return_md = False
-        self.return_json = not args.disable_json        
-        self.pdf_model = init_models(self.enable_ov, self.layout_type, self.mfd_type, self.mfr_enc_type,
-                        self.mfr_dec_type, self.ocr_det_type, self.ocr_rec_type, self.table_type,
-                        self.lang_type, self.page_type, self.nstreams, True)
+        self.return_md = True
+        self.return_json = not args.disable_json
+        self.enable_cache = args.enable_cache
+        self.pdf_model = init_BatchAnalyze(enable_cache=self.enable_cache, enable_ov=self.enable_ov, 
+                                    Layout_infer_type=self.layout_type, MFD_infer_type=self.mfd_type, MFR_enc_infer_type=self.mfr_enc_type,
+                                    MFR_dec_infer_type=self.mfr_dec_type, OCR_det_infer_type=self.ocr_det_type, OCR_rec_infer_type=self.ocr_rec_type,
+                                    wired_table_type=self.wired_table_type, WirelessTable_type=self.wireless_table_type,
+                                    img_orientation_cls_type=self.img_cls_type, table_cls_type=self.table_cls_type,
+                                    layoutreader_type=self.layoutreader_type, nstreams=self.nstreams)        
+        self.output_dir = "/tmp/pdf_ocr_output"
 
-    def process_pdf(self, pdf_raw: bytes) :
-        return doc_analyze_direct(pdf_raw, self.pdf_model, self.enable_ov, self.layout_type, self.mfd_type,
-                                  self.mfr_enc_type, self.mfr_dec_type, self.ocr_det_type,
-                                  self.ocr_rec_type, self.table_type, self.lang_type, self.page_type,
-                                  self.nstreams, self.return_md, self.return_json)
+    def process_pdf(self, pdf_bytes: bytes, file_name: str = "input.pdf") -> Any:
+        return do_parse(
+                output_dir=self.output_dir,
+                pdf_file_names=[file_name],
+                pdf_bytes_list=[pdf_bytes],
+                p_lang_list=["ch"],
+                BatchAnalyze = self.pdf_model,
+                backend="pipeline",
+                parse_method="auto",
+                formula_enable=True,
+                table_enable=True,
+                server_url=None,
+                f_draw_layout_bbox=False,
+                f_draw_span_bbox=False,
+                f_dump_md=self.return_md,
+                f_dump_middle_json=self.return_json,
+                f_dump_model_output=False,
+                f_dump_orig_pdf=False,
+                f_dump_content_list=False,
+                # f_make_md_mode=MakeMode.MM_MD,
+                f_draw_line_sort_bbox=False,
+                start_page_id=0,
+                end_page_id=None,
+            )
 
 pdf_instance = PDF_Instance(args)
 
 def download_file(
-    url: PathLike,
-    filename: PathLike = None,
-    directory: PathLike = None,
+    url: str,
+    filename: Optional[str] = None,
+    directory: Optional[str] = None,
     show_progress: bool = True,
-) -> PathLike:
+) -> Path:
     """
     Download a file from a url and save it to the local filesystem. The file is saved to the
     current directory by default, or to `directory` if specified. If a filename is not given,
@@ -123,14 +171,14 @@ def download_file(
     filename = filename or Path(urllib.parse.urlparse(url).path).name
     chunk_size = 16384  # make chunks bigger so that not too many updates are triggered for Jupyter front-end
 
-    filename = Path(filename)
-    if len(filename.parts) > 1:
+    filename_path = Path(filename)
+    if len(filename_path.parts) > 1:
         raise ValueError(
             "`filename` should refer to the name of the file, excluding the directory. "
             "Use the `directory` parameter to specify a target directory for the downloaded file."
         )
 
-    filepath = Path(directory) / filename if directory is not None else filename
+    filepath = Path(directory) / filename_path if directory is not None else filename_path
     if filepath.exists():
         return filepath.resolve()
 
@@ -167,19 +215,98 @@ def download_file(
     return filepath.resolve()
 
 def load_pdf_file(file_path):
-    with open(file_path, 'rb') as f:
-        f.seek(0)
-        return f.read()
+    return read_fn(file_path)
+    # with open(file_path, 'rb') as f:
+    #     f.seek(0)
+    #     return f.read()
             
+def percentile(sorted_values, p):
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    rank = (len(sorted_values) - 1) * p
+    lower = int(rank)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    frac = rank - lower
+    return float(sorted_values[lower] * (1 - frac) + sorted_values[upper] * frac)
+
+
+def collect_pdf_inputs(input_paths):
+    pdf_files = []
+    for input_name in input_paths:
+        if os.path.isdir(input_name):
+            for root, dirs, files in os.walk(input_name):
+                for f in files:
+                    if f.lower().endswith("pdf"):
+                        pdf_files.append(os.path.join(root, f))
+        elif os.path.isfile(input_name) and input_name.lower().endswith("pdf"):
+            pdf_files.append(input_name)
+    return pdf_files
+
+
+def run_app_benchmark(pdf_files, repeat, warmup, output_json=None):
+    repeat = max(1, repeat)
+    warmup = max(0, warmup)
+
+    for _ in range(warmup):
+        for pdf_file in pdf_files:
+            pdf_raw = load_pdf_file(pdf_file)
+            pdf_instance.process_pdf(pdf_raw, file_name=os.path.basename(pdf_file))
+
+    latencies = []
+    benchmark_start = time.perf_counter()
+    for _ in range(repeat):
+        for pdf_file in pdf_files:
+            pdf_raw = load_pdf_file(pdf_file)
+            one_start = time.perf_counter()
+            pdf_instance.process_pdf(pdf_raw, file_name=os.path.basename(pdf_file))
+            one_end = time.perf_counter()
+            latencies.append(one_end - one_start)
+    benchmark_end = time.perf_counter()
+
+    sorted_latencies = sorted(latencies)
+    total_requests = len(latencies)
+    total_time = benchmark_end - benchmark_start
+    throughput = total_requests / total_time if total_time > 0 else 0.0
+
+    summary = {
+        "mode": "app",
+        "pdf_count": len(pdf_files),
+        "repeat": repeat,
+        "warmup": warmup,
+        "total_requests": total_requests,
+        "total_time_sec": round(total_time, 6),
+        "throughput_req_per_sec": round(throughput, 6),
+        "latency_sec": {
+            "min": round(min(sorted_latencies), 6),
+            "max": round(max(sorted_latencies), 6),
+            "mean": round(statistics.mean(sorted_latencies), 6),
+            "median": round(statistics.median(sorted_latencies), 6),
+            "p90": round(percentile(sorted_latencies, 0.90), 6),
+            "p95": round(percentile(sorted_latencies, 0.95), 6),
+            "p99": round(percentile(sorted_latencies, 0.99), 6),
+        }
+    }
+
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    if output_json is not None:
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"Saved benchmark summary to: {output_json}")
+
+
 @app.route('/', methods=['POST'])
 def pdf_process():
     pdf_raw = None
+    parse_file_name = "input.pdf"
     if request.is_json:
         json_data = request.get_json()
         if json_data:
             if 'url' in json_data:
                 random_uuid = uuid.uuid4()
                 filename = f"{random_uuid}.pdf"
+                parse_file_name = filename
                 filename = download_file(
                     url=json_data['url'],
                     filename=filename,
@@ -188,23 +315,27 @@ def pdf_process():
                 pdf_raw = load_pdf_file(filename)
                 os.remove(filename)
             elif 'pdf_raw' in json_data:
-                pdf_raw = json_data['pdf_raw'],
+                pdf_raw = json_data['pdf_raw']
             else :
                 return jsonify({'error': 'Unsupported JSON format. Expected {"url": "address"} or {"pdf_raw": "data"}'}), 400
         else:
             return jsonify({'error': 'Invalid JSON format. Expected {"url": "address"} or {"pdf_raw": "data"}'}), 400
     elif 'filename' in request.form:
         if os.path.exists(request.form['filename']):
+            parse_file_name = os.path.basename(request.form['filename'])
             # load pdf file
             pdf_raw = load_pdf_file(request.form['filename'])
         else:
             return jsonify({'error': 'Failed to open image file'}), 400
     elif 'file' in request.files:       
         pdf_file = request.files['file']
+        if pdf_file.filename:
+            parse_file_name = pdf_file.filename
         pdf_raw = pdf_file.read()
     elif 'url' in request.form:
         random_uuid = uuid.uuid4()
         filename = f"{random_uuid}.pdf"
+        parse_file_name = filename
         filename = download_file(
             url=request.form['url'],
             filename=filename,
@@ -220,7 +351,7 @@ def pdf_process():
     if pdf_raw is None :
         return jsonify({'error': 'PDF data is invalid'}), 400
     start_time = time.perf_counter()
-    (md_raw, json_raw) = pdf_instance.process_pdf(pdf_raw)
+    (md_raw, json_raw) = pdf_instance.process_pdf(pdf_raw, file_name=parse_file_name)
     end_time = time.perf_counter()
     print(f"Processing:  {end_time-start_time:.3f}")
     return jsonify({'json_raw': json_raw})
@@ -232,25 +363,18 @@ if __name__ == '__main__':
             exit(0)
         elif isinstance(args.input, str) :
             args.input = [args.input]
-        
-        for input_name in args.input:
-            if os.path.isdir(input_name) :  
-                for root, dirs, files in os.walk(input_name):
-                    for f in files:
-                        if f.lower().endswith("pdf"):
-                            full_path = os.path.join(root, f)
-                            pdf_raw = load_pdf_file(full_path)
-                            start_time = time.perf_counter()
-                            (md_raw, json_raw) = pdf_instance.process_pdf(pdf_raw)
-                            end_time = time.perf_counter()
-                            print(f"Processing {full_path}:  {end_time-start_time:.3f}")
-            elif os.path.isfile(input_name):
-                pdf_raw = load_pdf_file(input_name)
-                start_time = time.perf_counter()
-                (md_raw, json_raw) = pdf_instance.process_pdf(pdf_raw)
-                end_time = time.perf_counter()
-                print(f"Processing {input_name}:  {end_time-start_time:.3f}")
-            else :
-                print(f"app mode need set input")
+        pdf_files = collect_pdf_inputs(args.input)
+        if len(pdf_files) == 0:
+            print("app mode need set valid pdf input")
+            exit(0)
+
+        if args.benchmark:
+            run_app_benchmark(pdf_files, args.repeat, args.warmup, args.benchmark_json)
+        else:
+            for full_path in pdf_files:
+                pdf_raw = load_pdf_file(full_path)
+                (md_raw, json_raw) = pdf_instance.process_pdf(pdf_raw, file_name=os.path.basename(full_path))
     else :
+        if args.benchmark:
+            print("--benchmark works only in app mode (--app). Use client.py to benchmark serving mode.")
         app.run(host='0.0.0.0', port=5000)

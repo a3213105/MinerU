@@ -34,7 +34,7 @@ def read_config():
     config_file = resolve_config_file_path()
 
     if not os.path.exists(config_file):
-        # logger.warning(f'{config_file} not found, using default configuration')
+        logger.warning(f'{config_file} not found, using default configuration')
         return None
     else:
         with open(config_file, 'r', encoding='utf-8') as f:
